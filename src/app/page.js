@@ -1,11 +1,18 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { motion, useScroll, useTransform } from 'framer-motion';
 import Header from '../components/shared/Header';
 import StoryFeed from '../components/wire/StoryFeed';
 import TemperatureGauge from '../components/narrative/TemperatureGauge';
 
 export default function HomePage() {
+  const { scrollY } = useScroll();
+  
+  // Transform hero opacity, scale, and y translation based on scroll position
+  const heroOpacity = useTransform(scrollY, [0, 400], [1, 0]);
+  const heroScale = useTransform(scrollY, [0, 400], [1, 0.92]);
+  const heroY = useTransform(scrollY, [0, 400], [0, -60]);
+
   return (
     <main>
       <Header />
@@ -19,7 +26,17 @@ export default function HomePage() {
           <circle cx="400" cy="300" r="100" fill="var(--color-shift-red)" filter="blur(90px)" />
         </svg>
 
-        <div className="container" style={{ width: '100%', position: 'relative', zIndex: 2 }}>
+        <motion.div 
+          className="container" 
+          style={{ 
+            width: '100%', 
+            position: 'relative', 
+            zIndex: 2,
+            opacity: heroOpacity,
+            scale: heroScale,
+            y: heroY
+          }}
+        >
           <div className="hero-content">
             <motion.span 
               className="hero-eyebrow"
@@ -27,7 +44,7 @@ export default function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, ease: "easeOut" }}
             >
-              Cinder Financial Intelligence
+              Cinder
             </motion.span>
             
             <motion.h1 
@@ -36,7 +53,7 @@ export default function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
             >
-              The AI Newsroom That Trades Its Own Stories
+              Market News That Backs Its Own Trades
             </motion.h1>
             
             <motion.p 
@@ -45,7 +62,7 @@ export default function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, ease: "easeOut", delay: 0.25 }}
             >
-              Real-time ETF flow analytics and market sentiment classification, driving autonomous risk-managed trade execution on SoDEX.
+              Tracks ETF flows and market momentum, then places trades on SoDEX when a clear shift is confirmed.
             </motion.p>
             
             <motion.div 
@@ -55,25 +72,25 @@ export default function HomePage() {
               transition={{ duration: 0.6, ease: "easeOut", delay: 0.4 }}
             >
               <a href="/dashboard" className="btn-hero-primary">
-                Narrative Dashboard
+                Market Dashboard
               </a>
               <a href="/portfolio" className="btn-hero-secondary">
-                Configure Risk Limits
+                Risk Settings
               </a>
             </motion.div>
           </div>
-        </div>
+        </motion.div>
       </section>
 
-      {/* Main Wire Feed Layout */}
-      <div className="container">
+      {/* Feed scrolls up and overlays the hero */}
+      <div className="feed-overlay container">
         <div className="feed-layout">
           <div className="feed-column">
             <StoryFeed />
           </div>
           <div className="sidebar-column">
             <div className="clay-glass" style={{ padding: 'var(--space-lg)', borderRadius: 'var(--radius-lg)' }}>
-              <h3 className="section-heading" style={{ fontSize: '1.15rem', marginBottom: 'var(--space-md)' }}>Active Market Sentiment</h3>
+              <h3 className="section-heading" style={{ fontSize: '1.15rem', marginBottom: 'var(--space-md)' }}>Current Market Mood</h3>
               <TemperatureGauge />
             </div>
           </div>
@@ -82,3 +99,4 @@ export default function HomePage() {
     </main>
   );
 }
+

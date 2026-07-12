@@ -33,7 +33,7 @@ export default function ShiftAlert({ shift, threshold = 80 }) {
           borderRadius: '12px'
         }}
       >
-        Last regime shift confidence was <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{confidence.toFixed(1)}%</span> (Trade threshold: <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{threshold}%</span>). No automated execution triggered.
+        Last shift confidence was <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{confidence.toFixed(1)}%</span> — below the trade threshold of <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{threshold}%</span>. No trade was placed.
       </div>
     );
   }
@@ -94,15 +94,15 @@ export default function ShiftAlert({ shift, threshold = 80 }) {
             animation: 'pulse-live 1.8s ease-in-out infinite'
           }} 
         />
-        Live Execution
+        Active
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: 'var(--space-md)' }}>
         <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '1rem', color: 'var(--color-shift-red)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Narrative Regime Shift Triggered
+          Market Shift Detected
         </h4>
         <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', color: 'var(--color-sage)' }}>
-          A high-confidence narrative transition has crossed the trading threshold of {threshold}%.
+          The market narrative changed with {confidence.toFixed(1)}% confidence, crossing the {threshold}% threshold required to place a trade.
         </p>
       </div>
 
@@ -119,7 +119,7 @@ export default function ShiftAlert({ shift, threshold = 80 }) {
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <span style={{ fontSize: '0.65rem', color: 'var(--color-sage)', textTransform: 'uppercase', fontFamily: 'var(--font-body)', fontWeight: 600 }}>Previous Regime</span>
+          <span style={{ fontSize: '0.65rem', color: 'var(--color-sage)', textTransform: 'uppercase', fontFamily: 'var(--font-body)', fontWeight: 600 }}>Previous</span>
           <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-linen)', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: fromMeta.color }} />
             {fromMeta.name}
@@ -127,7 +127,7 @@ export default function ShiftAlert({ shift, threshold = 80 }) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', borderTop: '1px solid var(--glass-border)', paddingTop: 'var(--space-sm)' }}>
-          <span style={{ fontSize: '0.65rem', color: 'var(--color-data-blue)', textTransform: 'uppercase', fontFamily: 'var(--font-body)', fontWeight: 600 }}>Active Target Regime</span>
+          <span style={{ fontSize: '0.65rem', color: 'var(--color-data-blue)', textTransform: 'uppercase', fontFamily: 'var(--font-body)', fontWeight: 600 }}>Now Active</span>
           <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-data-blue)', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: toMeta.color }} />
             {toMeta.name}
@@ -159,9 +159,9 @@ export default function ShiftAlert({ shift, threshold = 80 }) {
         </div>
         {shift.trade_id && (
           <div>
-            <span style={{ color: 'var(--color-sage)' }}>System Action:</span>{' '}
+            <span style={{ color: 'var(--color-sage)' }}>Action Taken:</span>{' '}
             <span style={{ color: 'var(--color-data-blue)', fontWeight: 700 }}>
-              REBALANCING ORDER EXECUTION
+              ORDER PLACED
             </span>
           </div>
         )}
@@ -170,7 +170,7 @@ export default function ShiftAlert({ shift, threshold = 80 }) {
       {signalsArray && signalsArray.length > 0 && (
         <div style={{ paddingTop: 'var(--space-sm)', borderTop: '1px solid var(--glass-border)' }}>
           <span style={{ fontSize: '0.65rem', color: 'var(--color-sage)', textTransform: 'uppercase', fontFamily: 'var(--font-body)', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
-            Supporting Evidence Summary
+            Why this trade was made
           </span>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {signalsArray.map((sig, idx) => (

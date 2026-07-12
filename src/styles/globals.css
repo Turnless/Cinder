@@ -1039,7 +1039,9 @@ input, textarea, select {
    14. Hero Section Layout Styles
    ---------------------------------------------------------- */
 .hero-section {
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 1;
   min-height: 90vh;
   display: flex;
   align-items: center;
@@ -1048,6 +1050,16 @@ input, textarea, select {
   overflow: hidden;
   padding: var(--space-3xl) var(--space-lg);
   border-bottom: 1px solid var(--glass-border);
+}
+
+.feed-overlay {
+  position: relative;
+  z-index: 2;
+  background: var(--color-obsidian);
+  margin-top: -80px;
+  border-radius: 28px 28px 0 0;
+  padding-top: var(--space-xl);
+  box-shadow: 0 -12px 40px rgba(15, 16, 14, 0.6);
 }
 
 @media (min-width: 1024px) {

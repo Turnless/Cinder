@@ -78,12 +78,12 @@ export default function DashboardPage() {
           <div>
             <h1 className="section-heading">Narrative Intelligence</h1>
             <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.875rem', color: 'var(--color-sage)', marginTop: 'var(--space-xs)' }}>
-              Real-time monitoring of crypto market regimes, ETF flows, and sentiment rotations.
+              Tracks which market narratives are gaining or losing momentum based on ETF flows and sector data.
             </p>
           </div>
           {loading && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--color-wire-gold)', fontWeight: 700 }}>
-              Syncing Ledger...
+              Loading...
             </div>
           )}
         </div>
@@ -93,7 +93,7 @@ export default function DashboardPage() {
           {/* Left Column: Bubble Map */}
           <div className="main-viz">
             <div className="clay-glass bubble-map-panel">
-              <div className="bubble-map-title">Archetype Heat Distribution</div>
+              <div className="bubble-map-title">Narrative Heat Map</div>
               <BubbleMap temperatures={narrativeData.temperatures} />
             </div>
           </div>
@@ -105,7 +105,7 @@ export default function DashboardPage() {
             )}
             
             <div className="active-narratives-list">
-              <h3 className="section-heading" style={{ fontSize: '1.1rem', marginBottom: 'var(--space-sm)' }}>Regime Temperatures</h3>
+              <h3 className="section-heading" style={{ fontSize: '1.1rem', marginBottom: 'var(--space-sm)' }}>Market Narratives</h3>
               {sortedNarratives.map((nar) => {
                 // Determine Trend Arrow Icon based on temp range:
                 // >80 is spike (red), >50 is up (gold), else down (sage)
@@ -147,29 +147,29 @@ export default function DashboardPage() {
 
         {/* Timeline Section */}
         <div className="timeline-section clay-glass" style={{ padding: 'var(--space-lg)' }}>
-          <h3 className="section-heading" style={{ fontSize: '1.25rem', marginBottom: 'var(--space-md)' }}>Regime History Timeline</h3>
+          <h3 className="section-heading" style={{ fontSize: '1.25rem', marginBottom: 'var(--space-md)' }}>Shift History</h3>
           <Timeline shifts={narrativeData.shifts} />
         </div>
 
         {/* Shift History Log Table */}
         <div className="shift-history-section clay-glass" style={{ padding: 'var(--space-lg)', marginTop: 'var(--space-xl)' }}>
-          <h3 className="section-heading" style={{ fontSize: '1.25rem', marginBottom: 'var(--space-md)' }}>Execution & Shift Logs</h3>
+          <h3 className="section-heading" style={{ fontSize: '1.25rem', marginBottom: 'var(--space-md)' }}>Trade & Shift Log</h3>
           <div className="table-container">
             <table>
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>From Regime</th>
-                  <th>To Regime</th>
+                  <th>From</th>
+                  <th>To</th>
                   <th>Confidence</th>
-                  <th>Intelligence Report</th>
-                  <th>Execution Transaction</th>
+                  <th>Report</th>
+                  <th>Trade</th>
                 </tr>
               </thead>
               <tbody>
                 {narrativeData.shifts.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', color: 'var(--color-sage)' }}>No regime shifts logged yet.</td>
+                    <td colSpan={6} style={{ textAlign: 'center', color: 'var(--color-sage)' }}>No shifts logged yet.</td>
                   </tr>
                 ) : (
                   narrativeData.shifts.map((shift) => {

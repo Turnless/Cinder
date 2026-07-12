@@ -146,7 +146,7 @@ export default function StoryFeed() {
   if (loading) {
     return (
       <div className="story-feed-wrapper">
-        <h3 className="feed-title">Connecting to Wire Service...</h3>
+        <h3 className="feed-title">Loading stories...</h3>
         {renderSkeletons()}
       </div>
     );
@@ -155,10 +155,10 @@ export default function StoryFeed() {
   if (error && stories.length === 0) {
     return (
       <div className="feed-error-state clay-glass">
-        <h4>Failed to Load Wire Feed</h4>
+        <h4>Could not load stories</h4>
         <p>{error}</p>
         <button className="btn-hero-primary" onClick={() => fetchStories(1, false)}>
-          Retry Connection
+          Retry
         </button>
       </div>
     );
@@ -167,8 +167,8 @@ export default function StoryFeed() {
   if (stories.length === 0) {
     return (
       <div className="feed-empty-state clay-glass">
-        <h4>Wire Feed is Empty</h4>
-        <p>No stories have been published yet. Waiting for market shifts...</p>
+        <h4>No stories yet</h4>
+        <p>Nothing has been published yet. Check back soon.</p>
       </div>
     );
   }
@@ -176,7 +176,7 @@ export default function StoryFeed() {
   return (
     <div className="story-feed-wrapper">
       <div className="feed-header-row">
-        <h2 className="feed-title">Live Intelligence Feed</h2>
+        <h2 className="feed-title">Latest Stories</h2>
         <span className="feed-count">{stories.length} reports loaded</span>
       </div>
 
@@ -208,7 +208,7 @@ export default function StoryFeed() {
             disabled={loadingMore}
             style={{ width: '100%', maxWidth: '320px' }}
           >
-            {loadingMore ? 'Loading More Reports...' : 'Load More News'}
+            {loadingMore ? 'Loading...' : 'Load More'}
           </button>
         </div>
       )}

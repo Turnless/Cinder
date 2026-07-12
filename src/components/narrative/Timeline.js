@@ -20,7 +20,7 @@ export default function Timeline({ shifts = [] }) {
     return (
       <div className="clay-glass" style={{ padding: 'var(--space-lg)', textAlign: 'center' }}>
         <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.875rem', color: 'var(--color-sage)' }}>
-          No regime shifts detected in the database.
+          No shifts on record yet.
         </p>
       </div>
     );
@@ -106,7 +106,7 @@ export default function Timeline({ shifts = [] }) {
                   </span>
                 </div>
                 <div style={{ paddingLeft: '16px', fontFamily: 'var(--font-mono)', fontSize: '0.68rem', fontWeight: 700, color: 'var(--color-wire-gold)', letterSpacing: '0.05em' }}>
-                  ROTATION
+                  SHIFT TO
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, backgroundColor: toMeta.color }} />
@@ -128,9 +128,7 @@ export default function Timeline({ shifts = [] }) {
                     flexGrow: 1
                   }}
                 >
-                  <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-sage)', letterSpacing: '0.05em', marginBottom: '6px' }}>
-                    Evidence Signals
-                  </div>
+                  <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-sage)', letterSpacing: '0.05em', marginBottom: '6px' }}>What triggered it</div>
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                     {signalsParsed.slice(0, 3).map((sig, sigIdx) => (
                       <li 
