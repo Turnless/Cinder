@@ -1,5 +1,7 @@
 import crypto from 'crypto';
 import { NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 import { query, execute } from '../../../lib/db';
 import { rateLimit } from '../../../lib/rate-limiter';
 
@@ -140,8 +142,6 @@ async function ensureDbData() {
   try {
     const tables = await query("SELECT name FROM sqlite_master WHERE type='table' AND name='stories'");
     if (tables.length === 0) {
-      const fs = require('fs');
-      const path = require('path');
       const migrationPath = path.join(process.cwd(), 'migrations', '0001_init.sql');
       if (fs.existsSync(migrationPath)) {
         const sqlContent = fs.readFileSync(migrationPath, 'utf8');

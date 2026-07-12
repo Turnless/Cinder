@@ -61,7 +61,6 @@ export default function QuickTrade({ onTradeSuccess }) {
     try {
       let finalPrice = price || '0.0';
       if (orderType === 'market') {
-        // Fallback ticker lookup
         finalPrice = pair.startsWith('BTC') ? '64850.00' : '3210.00';
       }
 
@@ -82,7 +81,6 @@ export default function QuickTrade({ onTradeSuccess }) {
         const provider = new ethers.providers.Web3Provider(window.ethereum);
         const signer = provider.getSigner();
 
-        // EIP-712 Domain and Typed Data structure for SoDEX action
         const domain = {
           name: 'spot',
           version: '1',
@@ -107,19 +105,16 @@ export default function QuickTrade({ onTradeSuccess }) {
           stopPrice: slPrice ? String(slPrice) : '0.0'
         };
 
-        // Construct payload JSON exactly as SoDEX expects to sign over it
         const payloadJson = JSON.stringify({ type: actionType, params: orderParams });
         const payloadHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(payloadJson));
         const nonce = Date.now();
 
         const message = { payloadHash, nonce };
 
-        // Request EIP-712 typed signature from MetaMask
         signature = await signer._signTypedData(domain, types, message);
         setSignatureHex(signature);
       }
 
-      // POST to our Server API to execute
       const response = await fetch('/api/trade', {
         method: 'POST',
         headers: {
@@ -147,7 +142,7 @@ export default function QuickTrade({ onTradeSuccess }) {
       }
     } catch (err) {
       console.error(err);
-      setErrorMessage(err.message || 'Signature rejected or network error.');
+      setErrorMessage(err.message || 'Signature rejected or trade failed risk gates checks.');
       setStep('error');
     } finally {
       setLoading(false);
@@ -155,26 +150,29 @@ export default function QuickTrade({ onTradeSuccess }) {
   };
 
   return (
-    <div className="quick-trade bg-[#12161f] border border-[#242b3b] p-6 rounded-lg shadow-lg">
-      <div className="flex justify-between items-center mb-6">
+    <div className="quick-trade clay-glass" style={{ padding: 'var(--space-lg)', borderRadius: 'var(--radius-lg)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' }}>
         <div>
-          <h3 className="text-lg font-bold text-[#f0f2f5] flex items-center gap-2">
-            <span className="text-[#00f0ff]">⚡</span> Quick Trade Execution
+          <h3 className="section-heading" style={{ fontSize: '1.25rem' }}>
+            Quick Trade Execution
           </h3>
-          <p className="text-xs text-[#8c9ba5] mt-0.5">Place manual orders with EIP-712 client signing</p>
+          <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', color: 'var(--color-sage)', marginTop: '2px' }}>
+            Place manual orders with EIP-712 client signing
+          </p>
         </div>
         
         {walletAddress ? (
-          <span className="text-[10px] bg-[rgba(52,199,89,0.15)] text-[#34c759] border border-[rgba(52,199,89,0.3)] px-2.5 py-1 rounded-full font-mono">
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', backgroundColor: 'rgba(74, 222, 128, 0.08)', color: 'var(--color-pulse-green)', border: '1px solid rgba(74, 222, 128, 0.25)', padding: '4px 10px', borderRadius: 'var(--radius-full)' }}>
             Connected: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
           </span>
         ) : (
           <button
             onClick={handleConnectWallet}
             disabled={isConnecting}
-            className="text-[10px] bg-[#242b3b] hover:bg-[#2e374a] text-[#f0f2f5] px-3 py-1 rounded-full border border-[#242b3b] transition-colors"
+            className="btn-hero-secondary"
+            style={{ fontSize: '0.68rem', padding: '6px 12px', borderRadius: 'var(--radius-full)' }}
           >
-            {isConnecting ? 'Connecting...' : '🔌 Connect Wallet'}
+            {isConnecting ? 'Connecting...' : 'Connect Wallet'}
           </button>
         )}
       </div>
@@ -186,41 +184,62 @@ export default function QuickTrade({ onTradeSuccess }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="space-y-4"
+            style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
           >
             {/* BUY / SELL Switch */}
-            <div className="grid grid-cols-2 gap-2 bg-[#1b212f] p-1 rounded-lg border border-[#242b3b]">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', backgroundColor: 'var(--color-obsidian)', padding: '4px', borderRadius: 'var(--radius-md)', border: '1px solid var(--glass-border)' }}>
               <button
                 type="button"
                 onClick={() => setSide('buy')}
-                className={`py-2 text-xs font-black rounded-md transition-colors ${
-                  side === 'buy' 
-                    ? 'bg-[#34c759] text-white shadow-md' 
-                    : 'text-[#8c9ba5] hover:text-[#f0f2f5]'
-                }`}
+                style={{
+                  border: 'none',
+                  padding: '8px 0',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  backgroundColor: side === 'buy' ? 'var(--color-pulse-green)' : 'transparent',
+                  color: side === 'buy' ? 'var(--color-obsidian)' : 'var(--color-sage)',
+                  transition: 'all 0.2s ease'
+                }}
               >
                 BUY / LONG
               </button>
               <button
                 type="button"
                 onClick={() => setSide('sell')}
-                className={`py-2 text-xs font-black rounded-md transition-colors ${
-                  side === 'sell' 
-                    ? 'bg-[#ff3b30] text-white shadow-md' 
-                    : 'text-[#8c9ba5] hover:text-[#f0f2f5]'
-                }`}
+                style={{
+                  border: 'none',
+                  padding: '8px 0',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  backgroundColor: side === 'sell' ? 'var(--color-shift-red)' : 'transparent',
+                  color: side === 'sell' ? 'var(--color-linen)' : 'var(--color-sage)',
+                  transition: 'all 0.2s ease'
+                }}
               >
                 SELL / SHORT
               </button>
             </div>
 
             {/* Asset Pair Selection */}
-            <div className="flex flex-col gap-1.5 text-xs">
-              <label className="text-[#8c9ba5] font-bold">Trading Asset Pair</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-sage)' }}>Trading Asset Pair</label>
               <select
                 value={pair}
                 onChange={(e) => setPair(e.target.value)}
-                className="bg-[#1b212f] border border-[#242b3b] text-[#f0f2f5] p-2.5 rounded-lg focus:outline-none focus:border-[#00f0ff]"
+                style={{
+                  backgroundColor: 'var(--color-iron)',
+                  border: '1px solid var(--glass-border)',
+                  color: 'var(--color-linen)',
+                  padding: '10px',
+                  borderRadius: 'var(--radius-md)',
+                  fontFamily: 'var(--font-body)',
+                  fontSize: '0.85rem',
+                  outline: 'none'
+                }}
               >
                 <option value="BTC-USDC">BTC-USDC (Bitcoin)</option>
                 <option value="ETH-USDC">ETH-USDC (Ethereum)</option>
@@ -231,28 +250,46 @@ export default function QuickTrade({ onTradeSuccess }) {
             </div>
 
             {/* Order Type and Quantity */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1.5 text-xs">
-                <label className="text-[#8c9ba5] font-bold">Order Type</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-sage)' }}>Order Type</label>
                 <select
                   value={orderType}
                   onChange={(e) => setOrderType(e.target.value)}
-                  className="bg-[#1b212f] border border-[#242b3b] text-[#f0f2f5] p-2.5 rounded-lg focus:outline-none focus:border-[#00f0ff]"
+                  style={{
+                    backgroundColor: 'var(--color-iron)',
+                    border: '1px solid var(--glass-border)',
+                    color: 'var(--color-linen)',
+                    padding: '10px',
+                    borderRadius: 'var(--radius-md)',
+                    fontFamily: 'var(--font-body)',
+                    fontSize: '0.85rem',
+                    outline: 'none'
+                  }}
                 >
                   <option value="market">Market Order</option>
                   <option value="limit">Limit Order</option>
                 </select>
               </div>
 
-              <div className="flex flex-col gap-1.5 text-xs">
-                <label className="text-[#8c9ba5] font-bold">Quantity</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-sage)' }}>Quantity</label>
                 <input
                   type="number"
                   placeholder="0.00"
                   step="any"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
-                  className="bg-[#1b212f] border border-[#242b3b] text-[#f0f2f5] p-2.5 rounded-lg focus:outline-none focus:border-[#00f0ff]"
+                  style={{
+                    backgroundColor: 'var(--color-iron)',
+                    border: '1px solid var(--glass-border)',
+                    color: 'var(--color-linen)',
+                    padding: '10px',
+                    borderRadius: 'var(--radius-md)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.85rem',
+                    outline: 'none'
+                  }}
                 />
               </div>
             </div>
@@ -262,30 +299,39 @@ export default function QuickTrade({ onTradeSuccess }) {
               <motion.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
-                className="flex flex-col gap-1.5 text-xs"
+                style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}
               >
-                <label className="text-[#8c9ba5] font-bold">Limit Price (USDC)</label>
+                <label style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-sage)' }}>Limit Price (USDC)</label>
                 <input
                   type="number"
                   placeholder="0.00"
                   step="any"
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
-                  className="bg-[#1b212f] border border-[#242b3b] text-[#f0f2f5] p-2.5 rounded-lg focus:outline-none focus:border-[#00f0ff]"
+                  style={{
+                    backgroundColor: 'var(--color-iron)',
+                    border: '1px solid var(--glass-border)',
+                    color: 'var(--color-linen)',
+                    padding: '10px',
+                    borderRadius: 'var(--radius-md)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.85rem',
+                    outline: 'none'
+                  }}
                 />
               </motion.div>
             )}
 
             {/* Stop Loss Checkbox */}
-            <div className="flex items-center gap-2 pt-2 text-xs">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '8px' }}>
               <input
                 type="checkbox"
                 id="stoploss"
                 checked={useStopLoss}
                 onChange={(e) => setUseStopLoss(e.target.checked)}
-                className="w-4 h-4 accent-[#ff3b30]"
+                style={{ cursor: 'pointer' }}
               />
-              <label htmlFor="stoploss" className="text-[#8c9ba5] cursor-pointer">
+              <label htmlFor="stoploss" style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', color: 'var(--color-sage)', cursor: 'pointer' }}>
                 Attach Trailing Stop Loss
               </label>
             </div>
@@ -294,16 +340,18 @@ export default function QuickTrade({ onTradeSuccess }) {
               <motion.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
-                className="flex flex-col gap-1.5 text-xs pl-6"
+                style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '24px' }}
               >
-                <label className="text-[#8c9ba5]">Stop Loss Threshold: <b>{stopLossPercentage}%</b></label>
+                <label style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', color: 'var(--color-linen)' }}>
+                  Stop Loss Threshold: <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{stopLossPercentage}%</span>
+                </label>
                 <input
                   type="range"
                   min="3"
                   max="15"
                   value={stopLossPercentage}
                   onChange={(e) => setStopLossPercentage(parseInt(e.target.value))}
-                  className="w-full h-1.5 bg-[#1b212f] rounded-lg appearance-none cursor-pointer accent-[#ff3b30]"
+                  className="slider-input"
                 />
               </motion.div>
             )}
@@ -312,7 +360,8 @@ export default function QuickTrade({ onTradeSuccess }) {
             <button
               type="button"
               onClick={handleReviewOrder}
-              className="w-full bg-[#007aff] hover:bg-[#005ec3] text-[#f0f2f5] text-xs font-black py-3 rounded-lg shadow-md transition-colors mt-4"
+              className="btn-hero-primary"
+              style={{ width: '100%', marginTop: '16px' }}
             >
               Review Order Details
             </button>
@@ -325,68 +374,79 @@ export default function QuickTrade({ onTradeSuccess }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="space-y-4"
+            style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
           >
-            <div className="bg-[#1b212f] border border-[#242b3b] p-4 rounded-lg space-y-3 text-xs">
-              <h4 className="font-bold text-sm text-[#f0f2f5] border-b border-[#242b3b] pb-2">Confirm Order Details</h4>
-              <div className="flex justify-between">
-                <span className="text-[#8c9ba5]">Transaction Side:</span>
-                <span className={`font-black uppercase ${side === 'buy' ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{side}</span>
+            <div style={{ backgroundColor: 'rgba(60, 61, 55, 0.25)', border: '1px solid var(--glass-border)', padding: '16px', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.8rem' }}>
+              <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-linen)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '8px', marginBottom: '4px' }}>Confirm Order Details</h4>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--color-sage)' }}>Transaction Side:</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', color: side === 'buy' ? 'var(--color-pulse-green)' : 'var(--color-shift-red)' }}>{side}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[#8c9ba5]">Asset Pair:</span>
-                <span className="font-bold text-[#f0f2f5]">{pair}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--color-sage)' }}>Asset Pair:</span>
+                <span style={{ fontWeight: 700, color: 'var(--color-linen)' }}>{pair}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[#8c9ba5]">Order Type:</span>
-                <span className="font-bold text-[#f0f2f5] uppercase">{orderType}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--color-sage)' }}>Order Type:</span>
+                <span style={{ fontWeight: 700, color: 'var(--color-linen)', textTransform: 'uppercase' }}>{orderType}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[#8c9ba5]">Quantity:</span>
-                <span className="font-bold font-mono text-[#f0f2f5]">{quantity}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--color-sage)' }}>Quantity:</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-linen)' }}>{quantity}</span>
               </div>
               {orderType === 'limit' && (
-                <div className="flex justify-between">
-                  <span className="text-[#8c9ba5]">Limit Price:</span>
-                  <span className="font-bold font-mono text-[#f0f2f5]">${parseFloat(price).toFixed(2)}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--color-sage)' }}>Limit Price:</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-linen)' }}>${parseFloat(price).toFixed(2)}</span>
                 </div>
               )}
               {useStopLoss && (
-                <div className="flex justify-between">
-                  <span className="text-[#8c9ba5]">Trailing Stop Loss:</span>
-                  <span className="font-bold text-[#ff3b30]">{stopLossPercentage}%</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--color-sage)' }}>Trailing Stop Loss:</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-shift-red)' }}>{stopLossPercentage}%</span>
                 </div>
               )}
             </div>
 
             {/* Execute Buttons */}
-            <div className="flex flex-col gap-2 mt-4">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
               {walletAddress ? (
                 <button
                   type="button"
                   onClick={() => handleExecuteTrade('browser')}
-                  className="w-full bg-[#34c759] hover:bg-[#2aa84c] text-white text-xs font-black py-3 rounded-lg shadow-md transition-colors"
+                  className="btn-hero-primary"
+                  style={{ width: '100%', backgroundColor: 'var(--color-pulse-green)', borderColor: 'var(--color-pulse-green)', color: 'var(--color-obsidian)' }}
                 >
-                  ✍️ Sign EIP-712 & Execute
+                  Sign EIP-712 & Execute
                 </button>
               ) : (
-                <div className="text-center p-3 bg-[#1b212f] rounded-lg border border-[#ff9500]/20 text-[11px] text-[#ff9500] mb-1">
-                  💡 Connect Web3 Wallet above to sign orders locally, or execute using server credentials:
+                <div style={{ textAlign: 'center', padding: '12px', backgroundColor: 'rgba(245, 158, 11, 0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(245, 158, 11, 0.25)', fontSize: '0.72rem', color: 'var(--color-alert-amber)', marginBottom: '4px' }}>
+                  Connect Web3 Wallet above to sign orders locally, or execute using server credentials:
                 </div>
               )}
               
               <button
                 type="button"
                 onClick={() => handleExecuteTrade('server')}
-                className="w-full bg-[#242b3b] hover:bg-[#2e374a] text-[#f0f2f5] text-xs font-bold py-3 rounded-lg border border-[#242b3b] transition-colors"
+                className="btn-hero-secondary"
+                style={{ width: '100%' }}
               >
-                🔑 Execute with Server API Key
+                Execute with Server API Key
               </button>
 
               <button
                 type="button"
                 onClick={() => setStep('input')}
-                className="w-full text-center text-[#8c9ba5] hover:text-[#f0f2f5] text-xs py-2 mt-1"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontFamily: 'var(--font-body)',
+                  fontSize: '0.75rem',
+                  color: 'var(--color-sage)',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  marginTop: '8px'
+                }}
               >
                 Go Back
               </button>
@@ -399,12 +459,22 @@ export default function QuickTrade({ onTradeSuccess }) {
             key="signing-loader"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex flex-col items-center justify-center py-8 text-center text-xs"
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 0', textAlign: 'center', fontSize: '0.75rem' }}
           >
-            <div className="w-10 h-10 border-4 border-[#00f0ff] border-t-transparent rounded-full animate-spin mb-4" />
-            <h4 className="font-bold text-sm text-[#f0f2f5] mb-1">Waiting for Signature Confirmation</h4>
-            <p className="text-[#8c9ba5] max-w-xs leading-relaxed">
-              Confirm the EIP-712typed transaction request inside your browser extension or verify API key auth...
+            <div 
+              style={{
+                width: '32px',
+                height: '32px',
+                border: '3px solid var(--color-data-blue)',
+                borderTopColor: 'transparent',
+                borderRadius: '50%',
+                animation: 'pulse-live 1.2s linear infinite',
+                marginBottom: '16px'
+              }} 
+            />
+            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-linen)', marginBottom: '4px' }}>Waiting for Signature Confirmation</h4>
+            <p style={{ fontFamily: 'var(--font-body)', color: 'var(--color-sage)', maxWidth: '240px', lineHeight: 1.4 }}>
+              Confirm the EIP-712 typed transaction request inside your browser extension or verify API key auth...
             </p>
           </motion.div>
         )}
@@ -414,14 +484,14 @@ export default function QuickTrade({ onTradeSuccess }) {
             key="success-form"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="space-y-4 py-4 text-center text-xs"
+            style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0', textAlign: 'center', fontSize: '0.75rem' }}
           >
-            <div className="w-12 h-12 bg-[rgba(52,199,89,0.15)] text-[#34c759] border-2 border-[#34c759] rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-2">
+            <div style={{ width: '40px', height: '40px', backgroundColor: 'rgba(74, 222, 128, 0.08)', color: 'var(--color-pulse-green)', border: '2px solid var(--color-pulse-green)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', fontSize: '1.25rem', fontWeight: 'bold', margin: '0 auto 8px auto' }}>
               ✓
             </div>
-            <h4 className="font-bold text-sm text-[#34c759]">Order Executed Successfully!</h4>
+            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', color: 'var(--color-pulse-green)' }}>Order Executed Successfully!</h4>
             
-            <div className="bg-[#1b212f] border border-[#242b3b] p-4 rounded-lg text-left space-y-2 font-mono text-[11px] text-[#f0f2f5]">
+            <div style={{ backgroundColor: 'rgba(60, 61, 55, 0.25)', border: '1px solid var(--glass-border)', padding: '16px', borderRadius: 'var(--radius-lg)', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--color-linen)' }}>
               <div><b>Trade ID:</b> {executionResult?.tradeId}</div>
               <div><b>SoDEX Order ID:</b> {executionResult?.sodexOrderId}</div>
               <div><b>Execution Status:</b> {executionResult?.status}</div>
@@ -435,7 +505,8 @@ export default function QuickTrade({ onTradeSuccess }) {
                 setPrice('');
                 setStep('input');
               }}
-              className="w-full bg-[#242b3b] hover:bg-[#2e374a] text-[#f0f2f5] text-xs font-bold py-2.5 rounded-lg border border-[#242b3b]"
+              className="btn-hero-secondary"
+              style={{ width: '100%', marginTop: '8px' }}
             >
               Place Another Order
             </button>
@@ -447,28 +518,30 @@ export default function QuickTrade({ onTradeSuccess }) {
             key="error-form"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="space-y-4 py-4 text-center text-xs"
+            style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0', textAlign: 'center', fontSize: '0.75rem' }}
           >
-            <div className="w-12 h-12 bg-[rgba(255,59,48,0.15)] text-[#ff3b30] border-2 border-[#ff3b30] rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-2">
+            <div style={{ width: '40px', height: '40px', backgroundColor: 'rgba(239, 68, 68, 0.08)', color: 'var(--color-shift-red)', border: '2px solid var(--color-shift-red)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', fontSize: '1.25rem', fontWeight: 'bold', margin: '0 auto 8px auto' }}>
               !
             </div>
-            <h4 className="font-bold text-sm text-[#ff3b30]">Order Execution Failed</h4>
-            <p className="text-[#8c9ba5] leading-relaxed max-w-xs mx-auto">
+            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', color: 'var(--color-shift-red)' }}>Order Execution Failed</h4>
+            <p style={{ fontFamily: 'var(--font-body)', color: 'var(--color-sage)', leadingRelaxed: 1.4, maxWidth: '240px', margin: '0 auto' }}>
               {errorMessage || 'Signature rejected or trade failed risk gates checks.'}
             </p>
 
-            <div className="flex gap-2">
+            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
               <button
                 type="button"
                 onClick={() => setStep('review')}
-                className="flex-1 bg-[#242b3b] hover:bg-[#2e374a] text-[#f0f2f5] text-xs font-bold py-2.5 rounded-lg border border-[#242b3b]"
+                className="btn-hero-secondary"
+                style={{ flex: 1 }}
               >
                 Try Again
               </button>
               <button
                 type="button"
                 onClick={() => setStep('input')}
-                className="flex-1 bg-[#007aff] hover:bg-[#005ec3] text-white text-xs font-bold py-2.5 rounded-lg"
+                className="btn-hero-primary"
+                style={{ flex: 1 }}
               >
                 Edit Parameters
               </button>

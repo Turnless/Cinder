@@ -1,48 +1,150 @@
-/* Portfolio Premium Layout & Transition Styles */
+/* ============================================================
+   AlphaWire - Portfolio & Trading Page Styles
+   ============================================================ */
 
 .portfolio-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 1.5rem;
-  margin-top: 1.5rem;
+  gap: var(--space-xl);
+  margin-top: var(--space-xl);
 }
 
 @media (min-width: 1024px) {
   .portfolio-grid {
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: 1.8fr 1.2fr; /* 60% / 40% ratio */
   }
 }
 
 .portfolio-col-8 {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: var(--space-xl);
 }
 
 .portfolio-col-4 {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: var(--space-lg);
   position: sticky;
   top: 90px;
 }
 
-.portfolio-view, 
-.trade-history, 
-.quick-trade, 
-.risk-dashboard {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  padding: 1.75rem;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px var(--shadow-color);
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease, box-shadow 0.25s ease;
+/* Stat bar grid layout */
+.stat-bar-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-md);
+  margin-bottom: var(--space-xl);
 }
 
-.portfolio-view:hover, 
-.trade-history:hover, 
-.quick-trade:hover, 
-.risk-dashboard:hover {
-  border-color: var(--text-secondary);
-  box-shadow: 0 6px 18px var(--shadow-color);
+@media (min-width: 768px) {
+  .stat-bar-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.stat-card {
+  padding: var(--space-md);
+  text-align: center;
+}
+
+.stat-label {
+  font-family: var(--font-body);
+  font-weight: 300;
+  font-size: 0.75rem;
+  color: var(--color-sage);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat-val {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: var(--color-linen);
+  margin-top: 4px;
+}
+
+/* Slider Controls */
+.slider-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-md);
+}
+
+.slider-label-row {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--color-linen);
+}
+
+.slider-input {
+  width: 100%;
+  height: 4px;
+  background: var(--color-iron);
+  border-radius: var(--radius-full);
+  outline: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+}
+
+.slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-wire-gold);
+  border: 1px solid var(--color-linen);
+  cursor: pointer;
+  transition: transform var(--duration-fast) ease;
+}
+
+.slider-input::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* Active position listing */
+.positions-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.position-row-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-md);
+  border: 1px solid var(--glass-border);
+  background-color: rgba(60, 61, 55, 0.25);
+  border-radius: var(--radius-lg);
+}
+
+.position-info-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.position-pair-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--color-linen);
+}
+
+.position-meta-value {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--color-sage);
+}
+
+.position-info-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
 }

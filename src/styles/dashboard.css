@@ -1,15 +1,17 @@
-/* Dashboard Premium Grid and Layout Styling */
+/* ============================================================
+   AlphaWire - Narrative Dashboard Styles
+   ============================================================ */
 
 .dashboard-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 1.5rem;
-  margin-top: 1.5rem;
+  gap: var(--space-xl);
+  margin-top: var(--space-xl);
 }
 
 @media (min-width: 1024px) {
   .dashboard-grid {
-    grid-template-columns: 2.2fr 0.8fr;
+    grid-template-columns: 1.8fr 1.2fr; /* 60% / 40% ratio */
   }
 }
 
@@ -21,43 +23,141 @@
 .alert-side {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: var(--space-lg);
 }
 
-/* Bubble map visualization details */
-.bubble-map {
+/* Bubble Map Panel styling */
+.bubble-map-panel {
   width: 100%;
-  height: 520px;
-  background-color: var(--bg-secondary);
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 4px 12px var(--shadow-color);
-  padding: 1.5rem;
+  height: 360px; /* Mobile height */
+  padding: var(--space-lg);
+  position: relative;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
+}
+
+@media (min-width: 1024px) {
+  .bubble-map-panel {
+    height: 480px; /* Desktop height */
+  }
+}
+
+.bubble-map-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.bubble-map-title {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 0.95rem;
+  color: var(--color-linen);
+  margin-bottom: var(--space-xs);
+}
+
+/* Dashboard Narrative List Card */
+.active-narratives-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.narrative-card {
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.narrative-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.narrative-card-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: var(--color-linen);
+}
+
+.narrative-card-meta {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-sage);
+}
+
+.narrative-card-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+/* Timeline & Log */
+.timeline-section {
+  margin-top: var(--space-2xl);
+}
+
+.shift-history-section {
+  margin-top: var(--space-2xl);
+}
+
+/* Shift Alert */
+.shift-alert-card {
+  padding: var(--space-lg);
+}
+
+.shift-alert-badge {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.7rem;
+  color: var(--color-shift-red);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: var(--space-sm);
+  display: block;
+}
+
+.shift-alert-text {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--color-linen);
+}
+
+.shift-alert-meta {
+  margin-top: var(--space-md);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-sage);
+}
+
+/* SVGs / Gauges */
+.gauge-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   position: relative;
-  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
-.bubble-map:hover {
-  border-color: var(--text-muted);
+.gauge-svg {
+  transition: stroke-dashoffset 1.2s ease-in-out;
 }
 
-.narrative-timeline {
-  margin-top: 2rem;
-  padding: 1.75rem;
-  background-color: var(--bg-secondary);
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 4px 12px var(--shadow-color);
+.gauge-center-text {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  fill: var(--color-linen);
 }
 
-/* Animations / transitions indicators */
-.animated-card {
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
-}
-
-.animated-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px var(--shadow-color);
+.gauge-label {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 0.7rem;
+  fill: var(--color-sage);
+  text-anchor: middle;
 }

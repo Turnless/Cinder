@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import FlowChart from './FlowChart';
 import SectorHeatmap from './SectorHeatmap';
 
@@ -144,10 +145,10 @@ function convertTableToHTML(rows) {
   return html;
 }
 
-export default function StoryCard({ story }) {
-  const { type, title, body, summary, chart_data, narrative_state, published_at } = story;
+export default function StoryCard({ story, isDetail = false }) {
+  const { id, type, title, body, summary, chart_data, narrative_state, published_at } = story;
 
-  // Format Date
+  // Format Date (No raw system fallbacks, using clean format)
   const dateFormatted = new Date(published_at).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -157,7 +158,7 @@ export default function StoryCard({ story }) {
     timeZoneName: 'short'
   });
 
-  // Render markdown body alongside inline charts
+  // Render markdown body alongside inline charts (Only for details view)
   const renderBodyContent = () => {
     if (!body) return null;
 
@@ -166,14 +167,14 @@ export default function StoryCard({ story }) {
     return parts.map((part, index) => {
       if (part === '[ETF Flow Trend Chart]') {
         return (
-          <div key={index} className="inline-component-container">
+          <div key={index} className="clay-glass chart-container-card">
             <FlowChart data={chart_data?.etf_flows || []} />
           </div>
         );
       }
       if (part === '[Sector Heatmap]') {
         return (
-          <div key={index} className="inline-component-container">
+          <div key={index} className="clay-glass chart-container-card">
             <SectorHeatmap sectors={chart_data?.sectors || []} />
           </div>
         );
@@ -194,17 +195,17 @@ export default function StoryCard({ story }) {
   const renderNarrativeTags = () => {
     if (!narrative_state) return null;
 
+    const parsedState = typeof narrative_state === 'string' 
+      ? JSON.parse(narrative_state) 
+      : narrative_state;
+
     return (
       <div className="narrative-tags-container">
-        {Object.entries(narrative_state).map(([narId, temp]) => {
+        {Object.entries(parsedState).map(([narId, temp]) => {
           const tempVal = parseFloat(temp);
-          let tempClass = 'cool';
-          if (tempVal >= 70) tempClass = 'hot';
-          else if (tempVal >= 40) tempClass = 'warm';
-
           return (
-            <span key={narId} className={`narrative-tag ${tempClass}`}>
-              {NARRATIVE_NAMES[narId] || narId}: {tempVal.toFixed(1)}°
+            <span key={narId} className="narrative-tag">
+              {NARRATIVE_NAMES[narId] || narId} {tempVal.toFixed(1)}°
             </span>
           );
         })}
@@ -212,26 +213,81 @@ export default function StoryCard({ story }) {
     );
   };
 
-  return (
-    <article className={`story-card ${type}`}>
-      <header className="story-card-header">
-        <div className="story-meta-left">
-          <span className={`story-type-badge ${type}`}>
-            {type === 'breaking' && '⚡ BREAKING'}
-            {type === 'deep_dive' && '🔍 DEEP DIVE'}
-            {type === 'pulse' && '📈 MARKET PULSE'}
-          </span>
-          <time className="story-date">{dateFormatted}</time>
-        </div>
-      </header>
+  const cardClasses = `story-card clay-glass ${type === 'breaking' ? 'story-breaking' : ''}`;
 
-      <div className="story-card-content">
-        <h2 className="story-title">{title}</h2>
-        {summary && <p className="story-summary-text">{summary}</p>}
-        {renderNarrativeTags()}
-        <div className="story-body-wrapper">
+  if (isDetail) {
+    return (
+      <article className="story-detail-wrapper">
+        <header className="story-detail-header">
+          <div className="story-meta-left">
+            <span className={`story-type-badge ${type}`}>
+              {type === 'breaking' && 'BREAKING'}
+              {type === 'deep_dive' && 'DEEP DIVE'}
+              {type === 'pulse' && 'MARKET PULSE'}
+            </span>
+            <time className="story-date">{dateFormatted}</time>
+          </div>
+          <h1 className="story-detail-title">{title}</h1>
+          {summary && <p className="story-detail-subhead">{summary}</p>}
+        </header>
+
+        {type === 'breaking' && chart_data?.execution && (
+          <div className="clay-glass breaking-execution-banner">
+            <div className="execution-banner-title">EXECUTION DETAILS</div>
+            <div className="execution-details-grid">
+              <div>
+                <span className="execution-detail-label">Asset Pair:</span>{' '}
+                <span className="execution-detail-value">{chart_data.execution.pair}</span>
+              </div>
+              <div>
+                <span className="execution-detail-label">Side:</span>{' '}
+                <span className="execution-detail-value">{chart_data.execution.side}</span>
+              </div>
+              <div>
+                <span className="execution-detail-label">Quantity:</span>{' '}
+                <span className="execution-detail-value">{chart_data.execution.qty}</span>
+              </div>
+              <div>
+                <span className="execution-detail-label">Price:</span>{' '}
+                <span className="execution-detail-value">${parseFloat(chart_data.execution.price || 0).toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <hr className="story-divider" />
+
+        <div className="story-body-content">
           {renderBodyContent()}
         </div>
+      </article>
+    );
+  }
+
+  return (
+    <article className={cardClasses}>
+      <div>
+        <header className="story-card-header">
+          <div className="story-meta-left">
+            <span className={`story-type-badge ${type}`}>
+              {type === 'breaking' && 'BREAKING'}
+              {type === 'deep_dive' && 'DEEP DIVE'}
+              {type === 'pulse' && 'MARKET PULSE'}
+            </span>
+          </div>
+          <time className="story-date">{dateFormatted}</time>
+        </header>
+
+        <div className="story-card-content">
+          <Link href={`/story/${id}`}>
+            <h2 className="story-title" style={{ cursor: 'pointer' }}>{title}</h2>
+          </Link>
+          {summary && <p className="story-summary-text">{summary}</p>}
+        </div>
+      </div>
+
+      <div className="story-card-footer">
+        {renderNarrativeTags()}
       </div>
     </article>
   );

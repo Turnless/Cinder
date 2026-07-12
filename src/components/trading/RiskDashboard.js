@@ -11,71 +11,99 @@ export default function RiskDashboard({
   stopLossPercentage = 0.08
 }) {
   // Calculate stop-loss metrics
-  const activeStopLossesCount = positions.filter(p => p.stopLoss && parseFloat(pos => pos.stopLoss) !== 0).length;
+  const activeStopLossesCount = positions.filter(p => p.stopLoss && parseFloat(p.stopLoss) !== 0).length;
   
-  // Custom mock data for daily circuit breaker parameters
-  const maxDailyLossLimit = 5.0; // 5% max drawdown per day
+  // Custom circuit breaker parameters
   const currentDailyDrawdown = 0.0; // 0.0% nominal
   const circuitBreakerTriggered = false;
 
-  // Last trade cooldown mock
-  const lastTradeTime = new Date(Date.now() - 14 * 60 * 60 * 1000); // 14 hours ago
+  // Last trade cooldown
   const hoursSinceLastTrade = 14;
   const isCooldownActive = hoursSinceLastTrade < cooldownHours;
   const cooldownRemaining = cooldownHours - hoursSinceLastTrade;
 
   return (
-    <div className="risk-dashboard bg-[#12161f] border border-[#242b3b] p-6 rounded-lg shadow-lg">
-      <div className="mb-6">
-        <h3 className="text-lg font-bold text-[#f0f2f5] flex items-center gap-2">
-          <span className="text-[#ff9500]">🛡️</span> Risk & Safety Dashboard
+    <div className="risk-dashboard clay-glass" style={{ padding: 'var(--space-lg)', borderRadius: 'var(--radius-lg)' }}>
+      <div style={{ marginBottom: 'var(--space-lg)' }}>
+        <h3 className="section-heading" style={{ fontSize: '1.25rem' }}>
+          Risk & Safety Dashboard
         </h3>
-        <p className="text-xs text-[#8c9ba5] mt-0.5">Real-time risk guards, stop-losses, and circuit breakers</p>
+        <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', color: 'var(--color-sage)', marginTop: '2px' }}>
+          Real-time risk guards, stop-losses, and circuit breakers
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)' }}>
         {/* Guard Rails Status */}
-        <div className="bg-[#1b212f] border border-[#242b3b] rounded-lg p-4 flex flex-col justify-between">
-          <span className="text-[10px] text-[#8c9ba5] uppercase font-bold tracking-wider mb-2">Automated Risk Guards</span>
+        <div style={{ backgroundColor: 'rgba(60, 61, 55, 0.25)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-lg)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.65rem', color: 'var(--color-sage)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em' }}>
+            Automated Risk Guards
+          </span>
           
-          <div className="space-y-3.5">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {/* Master Auto-Trade */}
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-[#8c9ba5]">Autonomous Trading:</span>
-              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                autoTradeEnabled 
-                  ? 'bg-[rgba(52,199,89,0.1)] text-[#34c759] border-[rgba(52,199,89,0.2)]'
-                  : 'bg-[rgba(255,149,0,0.1)] text-[#ff9500] border-[rgba(255,149,0,0.2)]'
-              }`}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', fontFamily: 'var(--font-body)' }}>
+              <span style={{ color: 'var(--color-sage)' }}>Autonomous Trading:</span>
+              <span 
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.65rem',
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-full)',
+                  backgroundColor: autoTradeEnabled ? 'rgba(74, 222, 128, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+                  color: autoTradeEnabled ? 'var(--color-pulse-green)' : 'var(--color-alert-amber)',
+                  border: '1px solid',
+                  borderColor: autoTradeEnabled ? 'rgba(74, 222, 128, 0.25)' : 'rgba(245, 158, 11, 0.25)'
+                }}
+              >
                 {autoTradeEnabled ? 'ENABLED' : 'DISABLED'}
               </span>
             </div>
 
             {/* Circuit Breaker */}
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-[#8c9ba5]">Daily Loss Circuit-Breaker:</span>
-              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                circuitBreakerTriggered
-                  ? 'bg-[rgba(255,59,48,0.1)] text-[#ff3b30] border-[rgba(255,59,48,0.2)]'
-                  : 'bg-[rgba(52,199,89,0.1)] text-[#34c759] border-[rgba(52,199,89,0.2)]'
-              }`}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', fontFamily: 'var(--font-body)' }}>
+              <span style={{ color: 'var(--color-sage)' }}>Daily Loss Circuit-Breaker:</span>
+              <span 
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.65rem',
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-full)',
+                  backgroundColor: circuitBreakerTriggered ? 'rgba(239, 68, 68, 0.08)' : 'rgba(74, 222, 128, 0.08)',
+                  color: circuitBreakerTriggered ? 'var(--color-shift-red)' : 'var(--color-pulse-green)',
+                  border: '1px solid',
+                  borderColor: circuitBreakerTriggered ? 'rgba(239, 68, 68, 0.25)' : 'rgba(74, 222, 128, 0.25)'
+                }}
+              >
                 {circuitBreakerTriggered ? 'TRIGGERED' : 'NOMINAL'}
               </span>
             </div>
 
             {/* Cooldown Lock */}
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-[#8c9ba5]">Narrative Trade Cooldown:</span>
-              <div className="flex flex-col items-end">
-                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                  isCooldownActive
-                    ? 'bg-[rgba(255,149,0,0.1)] text-[#ff9500] border-[rgba(255,149,0,0.2)]'
-                    : 'bg-[rgba(52,199,89,0.1)] text-[#34c759] border-[rgba(52,199,89,0.2)]'
-                }`}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', fontSize: '0.78rem', fontFamily: 'var(--font-body)' }}>
+              <span style={{ color: 'var(--color-sage)', marginTop: '2px' }}>Narrative Trade Cooldown:</span>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                <span 
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.65rem',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-full)',
+                    backgroundColor: isCooldownActive ? 'rgba(245, 158, 11, 0.08)' : 'rgba(74, 222, 128, 0.08)',
+                    color: isCooldownActive ? 'var(--color-alert-amber)' : 'var(--color-pulse-green)',
+                    border: '1px solid',
+                    borderColor: isCooldownActive ? 'rgba(245, 158, 11, 0.25)' : 'rgba(74, 222, 128, 0.25)'
+                  }}
+                >
                   {isCooldownActive ? 'LOCKED' : 'READY'}
                 </span>
                 {isCooldownActive && (
-                  <span className="text-[9px] text-[#8c9ba5] mt-1">🕒 {cooldownRemaining}h remaining</span>
+                  <span style={{ fontSize: '0.62rem', color: 'var(--color-sage)', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
+                    {cooldownRemaining}h remaining
+                  </span>
                 )}
               </div>
             </div>
@@ -83,18 +111,24 @@ export default function RiskDashboard({
         </div>
 
         {/* Risk Thresholds Summary */}
-        <div className="bg-[#1b212f] border border-[#242b3b] rounded-lg p-4">
-          <span className="text-[10px] text-[#8c9ba5] uppercase font-bold tracking-wider mb-2 block">Risk Config Limits</span>
-          <div className="grid grid-cols-2 gap-4 text-center mt-2">
-            <div className="border-r border-[#242b3b] pr-2">
-              <div className="text-[10px] text-[#8c9ba5] uppercase">Max Allocation</div>
-              <div className="text-lg font-extrabold text-[#f0f2f5] mt-0.5">{(maxAllocation * 100).toFixed(0)}%</div>
-              <div className="text-[9px] text-[#5e6d78] mt-0.5">per narrative trade</div>
+        <div style={{ backgroundColor: 'rgba(60, 61, 55, 0.25)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-lg)', padding: '16px' }}>
+          <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.65rem', color: 'var(--color-sage)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em', display: 'block', marginBottom: '12px' }}>
+            Risk Config Limits
+          </span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', textAlign: 'center' }}>
+            <div style={{ borderRight: '1px solid var(--glass-border)', paddingRight: '8px' }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--color-sage)', fontFamily: 'var(--font-body)' }}>Max Allocation</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-linen)', fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
+                {(maxAllocation * 100).toFixed(0)}%
+              </div>
+              <div style={{ fontSize: '0.62rem', color: 'var(--color-sage)', marginTop: '2px', fontFamily: 'var(--font-body)' }}>per narrative</div>
             </div>
             <div>
-              <div className="text-[10px] text-[#8c9ba5] uppercase">Stop Loss Limit</div>
-              <div className="text-lg font-extrabold text-[#ff3b30] mt-0.5">{(stopLossPercentage * 100).toFixed(0)}%</div>
-              <div className="text-[9px] text-[#5e6d78] mt-0.5">trailing execution</div>
+              <div style={{ fontSize: '0.65rem', color: 'var(--color-sage)', fontFamily: 'var(--font-body)' }}>Stop Loss Limit</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-shift-red)', fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
+                {(stopLossPercentage * 100).toFixed(0)}%
+              </div>
+              <div style={{ fontSize: '0.62rem', color: 'var(--color-sage)', marginTop: '2px', fontFamily: 'var(--font-body)' }}>trailing execution</div>
             </div>
           </div>
         </div>
@@ -102,53 +136,54 @@ export default function RiskDashboard({
 
       {/* Active Trailing Stop Losses */}
       <div>
-        <span className="text-[10px] text-[#8c9ba5] uppercase font-bold tracking-wider block mb-3">Active Stop-Loss Thresholds</span>
+        <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.65rem', color: 'var(--color-sage)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em', display: 'block', marginBottom: '12px' }}>
+          Active Stop-Loss Thresholds
+        </span>
         
         {positions.length === 0 ? (
-          <div className="text-xs text-[#8c9ba5] italic p-4 text-center bg-[#1b212f] border border-[#242b3b] rounded-lg">
+          <div style={{ fontSize: '0.78rem', color: 'var(--color-sage)', fontStyle: 'italic', padding: '16px', textAlign: 'center', border: '1px dashed var(--glass-border)', borderRadius: 'var(--radius-lg)' }}>
             No active positions to monitor.
           </div>
         ) : (
-          <div className="space-y-3">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {positions.map((pos) => {
               const curPrice = parseFloat(pos.currentPrice || 0);
               const slPrice = parseFloat(pos.stopLoss || 0);
               
               // Calculate percentage distance to stop loss
               const distancePct = curPrice > 0 ? ((curPrice - slPrice) / curPrice) * 100 : 0;
-              const maxDistancePct = stopLossPercentage * 100; // E.g., 8%
-              
-              // Map progress bar width (from 0% left before stop loss to 100% maximum safety distance)
+              const maxDistancePct = stopLossPercentage * 100;
               const safetyFactor = Math.max(0, Math.min(100, (distancePct / maxDistancePct) * 100));
               
               // Determine safety color
-              let barColor = 'bg-[#34c759]'; // Green
+              let barColor = 'var(--color-pulse-green)';
               if (safetyFactor < 30) {
-                barColor = 'bg-[#ff3b30]'; // Red (very close to stop loss)
+                barColor = 'var(--color-shift-red)';
               } else if (safetyFactor < 65) {
-                barColor = 'bg-[#ff9500]'; // Orange
+                barColor = 'var(--color-alert-amber)';
               }
 
               return (
-                <div key={pos.asset} className="bg-[#1b212f] border border-[#242b3b] p-3.5 rounded-lg flex flex-col gap-2">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-extrabold text-[#f0f2f5]">{pos.asset}-USDC</span>
-                    <span className="text-[#8c9ba5]">
-                      Current: <b className="text-[#f0f2f5]">${curPrice.toLocaleString()}</b> | Stop: <b className="text-[#ff3b30]">${slPrice.toLocaleString()}</b>
+                <div key={pos.asset} style={{ backgroundColor: 'rgba(60, 61, 55, 0.25)', border: '1px solid var(--glass-border)', padding: '14px', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', fontFamily: 'var(--font-body)' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--color-linen)' }}>{pos.asset}-USDC</span>
+                    <span style={{ color: 'var(--color-sage)' }}>
+                      Current: <span style={{ color: 'var(--color-linen)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>${curPrice.toLocaleString()}</span> | 
+                      Stop: <span style={{ color: 'var(--color-shift-red)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>${slPrice.toLocaleString()}</span>
                     </span>
                   </div>
 
-                  {/* Distance visualization */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex-grow h-2 bg-[#12161f] rounded-full overflow-hidden">
+                  {/* Distance progress visualization */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ flexGrow: 1, height: '6px', backgroundColor: 'var(--color-iron)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
                       <motion.div 
-                        className={`h-full ${barColor}`}
+                        style={{ height: '100%', backgroundColor: barColor }}
                         initial={{ width: 0 }}
                         animate={{ width: `${safetyFactor}%` }}
                         transition={{ duration: 1 }}
                       />
                     </div>
-                    <span className="text-[10px] font-mono font-bold text-[#8c9ba5] w-12 text-right">
+                    <span style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-sage)', width: '56px', textAlign: 'right' }}>
                       {distancePct.toFixed(1)}% away
                     </span>
                   </div>

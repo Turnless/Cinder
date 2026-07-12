@@ -23,9 +23,10 @@ export default function SectorHeatmap({ sectors }) {
 
   if (validSectors.length === 0) {
     return (
-      <div className="heatmap-empty-state">
-        <span className="empty-icon">🗺️</span>
-        <p>No sector performance data available.</p>
+      <div className="heatmap-empty-state" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
+        <p style={{ color: 'var(--color-sage)', fontFamily: 'var(--font-body)', fontSize: '0.875rem' }}>
+          No sector performance data available.
+        </p>
       </div>
     );
   }
@@ -39,14 +40,14 @@ export default function SectorHeatmap({ sectors }) {
         // Calculate background opacity based on performance strength (cap at 25% for max density)
         const strength = Math.min(Math.abs(perf) / 25, 1);
         const bgColor = isPositive
-          ? `rgba(52, 199, 89, ${0.05 + strength * 0.15})`
-          : `rgba(255, 59, 48, ${0.05 + strength * 0.15})`;
+          ? `rgba(74, 222, 128, ${0.03 + strength * 0.12})`
+          : `rgba(239, 68, 68, ${0.03 + strength * 0.12})`;
         
         const borderColor = isPositive
-          ? `rgba(52, 199, 89, ${0.1 + strength * 0.3})`
-          : `rgba(255, 59, 48, ${0.1 + strength * 0.3})`;
+          ? `rgba(74, 222, 128, ${0.1 + strength * 0.25})`
+          : `rgba(239, 68, 68, ${0.1 + strength * 0.25})`;
         
-        const textColor = isPositive ? 'var(--accent-green)' : 'var(--accent-red)';
+        const textColor = isPositive ? 'var(--color-pulse-green)' : 'var(--color-shift-red)';
 
         return (
           <div 
@@ -59,7 +60,7 @@ export default function SectorHeatmap({ sectors }) {
           >
             <div className="sector-tile-header">
               <span className="sector-name">{sectorData.sector}</span>
-              <span className="sector-perf-badge" style={{ color: textColor }}>
+              <span className="sector-perf-badge" style={{ color: textColor, fontFamily: 'var(--font-mono)' }}>
                 {isPositive ? '▲' : '▼'} {isPositive ? '+' : ''}{perf.toFixed(1)}%
               </span>
             </div>
@@ -67,14 +68,14 @@ export default function SectorHeatmap({ sectors }) {
             <div className="sector-tile-body">
               <div className="sector-meta-row">
                 <span className="meta-label">30d Return</span>
-                <span className="meta-val">
+                <span className="meta-val" style={{ fontFamily: 'var(--font-mono)' }}>
                   {(sectorData.performance_30d || 0) >= 0 ? '+' : ''}
                   {(sectorData.performance_30d || 0).toFixed(1)}%
                 </span>
               </div>
               <div className="sector-meta-row">
                 <span className="meta-label">BTC Correlation</span>
-                <span className="meta-val correlation">
+                <span className="meta-val" style={{ color: 'var(--color-data-blue)', fontFamily: 'var(--font-mono)' }}>
                   {(sectorData.correlation_btc !== undefined && sectorData.correlation_btc !== null)
                     ? sectorData.correlation_btc.toFixed(2)
                     : 'N/A'}

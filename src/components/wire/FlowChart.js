@@ -11,14 +11,15 @@ export default function FlowChart({ data }) {
   }, []);
 
   if (!mounted) {
-    return <div className="chart-loading-placeholder">Loading chart...</div>;
+    return <div className="chart-loading-placeholder" style={{ fontFamily: 'var(--font-mono)' }}>Loading chart...</div>;
   }
 
   if (!data || data.length === 0) {
     return (
-      <div className="chart-empty-state">
-        <span className="empty-icon">📊</span>
-        <p>No ETF net flow data available for this period.</p>
+      <div className="chart-empty-state" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
+        <p style={{ color: 'var(--color-sage)', fontFamily: 'var(--font-body)', fontSize: '0.875rem' }}>
+          No ETF net flow data available for this period.
+        </p>
       </div>
     );
   }
@@ -61,56 +62,61 @@ export default function FlowChart({ data }) {
 
   if (formattedData.length === 0) {
     return (
-      <div className="chart-empty-state">
-        <span className="empty-icon">📊</span>
-        <p>No valid ETF net flow data available.</p>
+      <div className="chart-empty-state" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
+        <p style={{ color: 'var(--color-sage)', fontFamily: 'var(--font-body)', fontSize: '0.875rem' }}>
+          No valid ETF net flow data available.
+        </p>
       </div>
     );
   }
 
   return (
     <div className="flow-chart-wrapper">
-      <div className="chart-subtitle">Daily Net Inflows/Outflows ($ Millions)</div>
+      <div className="chart-title">Daily Net Inflows/Outflows ($ Millions)</div>
       <ResponsiveContainer width="100%" height={240}>
         <BarChart
           data={formattedData}
           margin={{ top: 15, right: 10, left: -10, bottom: 5 }}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--glass-border)" vertical={false} />
           <XAxis 
             dataKey="displayDate" 
-            stroke="var(--text-secondary)" 
+            stroke="var(--color-sage)" 
             fontSize={11}
+            fontFamily="var(--font-mono)"
             tickLine={false}
             axisLine={false}
           />
           <YAxis 
-            stroke="var(--text-secondary)" 
+            stroke="var(--color-sage)" 
             fontSize={11}
+            fontFamily="var(--font-mono)"
             tickLine={false}
             axisLine={false}
             tickFormatter={(value) => `${value > 0 ? '+' : ''}${value}M`}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: 'var(--bg-tertiary)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-primary)',
-              borderRadius: '8px',
-              fontSize: '12px'
+              backgroundColor: 'var(--color-iron)',
+              borderColor: 'var(--glass-border)',
+              color: 'var(--color-linen)',
+              borderRadius: '12px',
+              fontFamily: 'var(--font-body)',
+              fontSize: '12px',
+              boxShadow: '4px 4px 12px var(--clay-shadow-dark)'
             }}
             formatter={(value) => [`$${value.toFixed(1)}M`, 'Net Flow']}
             labelFormatter={(label) => `Date: ${label}`}
           />
-          <ReferenceLine y={0} stroke="var(--text-muted)" strokeWidth={1} />
+          <ReferenceLine y={0} stroke="var(--color-sage)" strokeWidth={1} strokeOpacity={0.5} />
           <Bar dataKey="flow">
             {formattedData.map((entry, index) => {
               const isPositive = entry.flow >= 0;
               return (
                 <Cell 
                   key={`cell-${index}`} 
-                  fill={isPositive ? 'var(--accent-green)' : 'var(--accent-red)'}
-                  fillOpacity={0.85}
+                  fill={isPositive ? 'var(--color-pulse-green)' : 'var(--color-shift-red)'}
+                  fillOpacity={0.8}
                 />
               );
             })}

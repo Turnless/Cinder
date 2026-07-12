@@ -4,6 +4,23 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import StoryCard from './StoryCard';
 
+const spring = { type: 'spring', stiffness: 280, damping: 24 };
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.08,
+    }
+  }
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 32 },
+  show: { opacity: 1, y: 0, transition: spring }
+};
+
 export default function StoryFeed() {
   const [stories, setStories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,7 +48,6 @@ export default function StoryFeed() {
       if (data.success) {
         setStories(prev => {
           if (append) {
-            // Deduplicate stories
             const existingIds = new Set(prev.map(s => s.id));
             const newStories = data.stories.filter(s => !existingIds.has(s.id));
             return [...prev, ...newStories];
@@ -41,9 +57,6 @@ export default function StoryFeed() {
         });
         
         const total = data.pagination?.total || 0;
-        const currentStoriesLength = append 
-          ? (stories.length + (data.stories?.length || 0)) 
-          : (data.stories?.length || 0);
         setHasMore(offset + (data.stories?.length || 0) < total);
       } else {
         setError(data.error || 'Failed to retrieve stories');
@@ -74,11 +87,9 @@ export default function StoryFeed() {
           try {
             const newStory = JSON.parse(event.data);
             setStories(prev => {
-              // Deduplicate live stories
               if (prev.some(s => s.id === newStory.id)) {
                 return prev;
               }
-              // Prepend new stories
               return [newStory, ...prev];
             });
           } catch (e) {
@@ -88,7 +99,6 @@ export default function StoryFeed() {
 
         eventSource.onerror = () => {
           eventSource.close();
-          // Try reconnecting in 10 seconds
           reconnectTimeout = setTimeout(connectSSE, 10000);
         };
       } catch (err) {
@@ -118,8 +128,8 @@ export default function StoryFeed() {
 
   // Premium Shimmer Loading Skeletons
   const renderSkeletons = () => (
-    <div className="stories-loading-container">
-      {[1, 2, 3].map((n) => (
+    <div className="story-feed">
+      {[1, 2, 3, 4].map((n) => (
         <div key={n} className="story-card-skeleton">
           <div className="skeleton-header">
             <div className="skeleton-badge shimmer"></div>
@@ -128,7 +138,6 @@ export default function StoryFeed() {
           <div className="skeleton-title shimmer"></div>
           <div className="skeleton-summary shimmer"></div>
           <div className="skeleton-line shimmer"></div>
-          <div className="skeleton-line short shimmer"></div>
         </div>
       ))}
     </div>
@@ -145,11 +154,10 @@ export default function StoryFeed() {
 
   if (error && stories.length === 0) {
     return (
-      <div className="feed-error-state">
-        <span className="error-icon">⚠️</span>
+      <div className="feed-error-state clay-glass">
         <h4>Failed to Load Wire Feed</h4>
         <p>{error}</p>
-        <button className="retry-btn" onClick={() => fetchStories(1, false)}>
+        <button className="btn-hero-primary" onClick={() => fetchStories(1, false)}>
           Retry Connection
         </button>
       </div>
@@ -158,8 +166,7 @@ export default function StoryFeed() {
 
   if (stories.length === 0) {
     return (
-      <div className="feed-empty-state">
-        <span className="empty-icon">📭</span>
+      <div className="feed-empty-state clay-glass">
         <h4>Wire Feed is Empty</h4>
         <p>No stories have been published yet. Waiting for market shifts...</p>
       </div>
@@ -170,32 +177,36 @@ export default function StoryFeed() {
     <div className="story-feed-wrapper">
       <div className="feed-header-row">
         <h2 className="feed-title">Live Intelligence Feed</h2>
-        <span className="feed-count">{stories.length} report{stories.length !== 1 ? 's' : ''} loaded</span>
+        <span className="feed-count">{stories.length} reports loaded</span>
       </div>
 
-      <motion.div className="story-feed" layout>
-        <AnimatePresence mode="popLayout">
+      <AnimatePresence mode="popLayout">
+        <motion.div 
+          className="story-feed" 
+          variants={containerVariants}
+          initial="hidden"
+          animate="show"
+          layout
+        >
           {stories.map((story) => (
             <motion.div
               key={story.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.3 }}
+              variants={itemVariants}
               layout
             >
               <StoryCard story={story} />
             </motion.div>
           ))}
-        </AnimatePresence>
-      </motion.div>
+        </motion.div>
+      </AnimatePresence>
 
       {hasMore && (
         <div className="load-more-container">
           <button 
-            className="load-more-btn" 
+            className="btn-hero-secondary" 
             onClick={handleLoadMore} 
             disabled={loadingMore}
+            style={{ width: '100%', maxWidth: '320px' }}
           >
             {loadingMore ? 'Loading More Reports...' : 'Load More News'}
           </button>

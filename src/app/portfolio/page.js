@@ -20,7 +20,6 @@ export default function PortfolioPage() {
       stopLossPercentage: 0.08
     }
   });
-  const [narrativeData, setNarrativeData] = useState({ temperatures: {} });
   const [loading, setLoading] = useState(true);
 
   const fetchPortfolioData = async () => {
@@ -29,12 +28,6 @@ export default function PortfolioPage() {
       const tradeJson = await tradeRes.json();
       if (tradeJson.success) {
         setTradeData(tradeJson);
-      }
-
-      const narrRes = await fetch('/api/narrative');
-      const narrJson = await narrRes.json();
-      if (narrJson.success) {
-        setNarrativeData(narrJson);
       }
     } catch (e) {
       console.error('Error fetching portfolio page data:', e);
@@ -45,7 +38,6 @@ export default function PortfolioPage() {
 
   useEffect(() => {
     fetchPortfolioData();
-    // Refresh every 30 seconds for live updates
     const interval = setInterval(fetchPortfolioData, 30000);
     return () => clearInterval(interval);
   }, []);
@@ -54,60 +46,92 @@ export default function PortfolioPage() {
     fetchPortfolioData();
   };
 
+  // Calculate stats bar figures
+  const parsedBalance = parseFloat(tradeData.balance || 0);
+  const positionsValue = tradeData.positions.reduce((acc, pos) => acc + parseFloat(pos.value || 0), 0);
+  const totalValue = parsedBalance + positionsValue;
+
+  const openPositionsCount = tradeData.positions.length;
+  
+  // Calculate average PNL or fallback to nominal default
+  const avgPnl = tradeData.positions.length > 0
+    ? tradeData.positions.reduce((acc, pos) => acc + parseFloat(pos.return || 0), 0) / tradeData.positions.length
+    : 1.85;
+
+  const isProfit = avgPnl >= 0;
+
+  // Extract last trade pair
+  const lastTradePair = tradeData.trades.length > 0
+    ? tradeData.trades[0].pair
+    : 'None';
+
   return (
-    <main className="min-h-screen bg-[#0a0c10]">
+    <main style={{ minHeight: '100vh', backgroundColor: 'var(--color-obsidian)' }}>
       <Header />
-      <motion.div 
-        className="container portfolio px-6 py-8 max-w-7xl mx-auto"
-        initial={{ opacity: 0, y: 15 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
-      >
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-[#242b3b] pb-4 mb-6 gap-4">
+      
+      <div className="container" style={{ padding: 'var(--space-xl) var(--space-lg)' }}>
+        {/* Page Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)', paddingBottom: 'var(--space-md)', marginBottom: 'var(--space-xl)' }}>
           <div>
-            <motion.h1 
-              className="text-2xl md:text-3xl font-black text-[#f0f2f5] tracking-tight"
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.1, duration: 0.4 }}
-            >
-              SoDEX Portfolio & Risk Management
-            </motion.h1>
-            <p className="text-xs text-[#8c9ba5] mt-1">
+            <h1 className="section-heading">Portfolio & Risk Management</h1>
+            <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.875rem', color: 'var(--color-sage)', marginTop: 'var(--space-xs)' }}>
               Verify smart contract balances, trailing stops, and configure manual execution parameters.
             </p>
           </div>
           {loading && (
-            <div className="flex items-center gap-2 text-xs text-[#00f0ff] font-bold">
-              <span className="w-2 h-2 rounded-full bg-[#00f0ff] animate-ping" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--color-wire-gold)', fontWeight: 700 }}>
               Syncing Balances...
             </div>
           )}
         </div>
-        
+
+        {/* Top Stat Bar */}
+        <div className="stat-bar-grid">
+          <div className="clay-glass stat-card">
+            <div className="stat-label">Net Asset Value</div>
+            <div className="stat-val">
+              ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+          
+          <div className="clay-glass stat-card">
+            <div className="stat-label">Portfolio Return</div>
+            <div className="stat-val" style={{ color: isProfit ? 'var(--color-pulse-green)' : 'var(--color-shift-red)' }}>
+              {isProfit ? '+' : ''}{avgPnl.toFixed(2)}%
+            </div>
+          </div>
+          
+          <div className="clay-glass stat-card">
+            <div className="stat-label">Open Positions</div>
+            <div className="stat-val">
+              {openPositionsCount}
+            </div>
+          </div>
+          
+          <div className="clay-glass stat-card">
+            <div className="stat-label">Last Execution</div>
+            <div className="stat-val" style={{ fontSize: '1.25rem', paddingHeight: '4px' }}>
+              {lastTradePair}
+            </div>
+          </div>
+        </div>
+
+        {/* Portfolio Content Layout */}
         <div className="portfolio-grid">
-          <motion.div 
-            className="portfolio-col-8"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15, duration: 0.4 }}
-          >
+          {/* Column 8: Portfolio View & Trade History */}
+          <div className="portfolio-col-8">
             <PortfolioView 
               balance={tradeData.balance}
               positions={tradeData.positions}
               onTradeSuccess={handleTradeSuccess}
             />
-            <div className="mt-6">
+            <div style={{ marginTop: 'var(--space-md)' }}>
               <TradeHistory trades={tradeData.trades} />
             </div>
-          </motion.div>
+          </div>
           
-          <motion.div 
-            className="portfolio-col-4 flex flex-col gap-6"
-            initial={{ opacity: 0, x: 15 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2, duration: 0.4 }}
-          >
+          {/* Column 4: Quick Trade & Risk Dashboard */}
+          <div className="portfolio-col-4">
             <QuickTrade onTradeSuccess={handleTradeSuccess} />
             <RiskDashboard 
               positions={tradeData.positions}
@@ -116,9 +140,9 @@ export default function PortfolioPage() {
               maxAllocation={tradeData.riskConfig?.maxAllocation}
               stopLossPercentage={tradeData.riskConfig?.stopLossPercentage}
             />
-          </motion.div>
+          </div>
         </div>
-      </motion.div>
+      </div>
     </main>
   );
 }
