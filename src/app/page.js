@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
 import Header from '../components/shared/Header';
+import Footer from '../components/shared/Footer';
 import StoryFeed from '../components/wire/StoryFeed';
 import StoryCard from '../components/wire/StoryCard';
 import TemperatureGauge from '../components/narrative/TemperatureGauge';
@@ -206,6 +207,34 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
+
+            {/* Cool Feature: The Autonomous Loop */}
+            <div style={{ marginTop: '48px' }}>
+              <h3 className="section-heading" style={{ fontSize: '1.15rem', marginBottom: '20px' }}>Autonomous Loop Architecture</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
+                <div className="clay-glass" style={{ padding: '24px', borderRadius: '16px' }}>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--color-wire-gold)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700 }}>Pillar 01</div>
+                  <h4 style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', color: 'var(--color-linen)', marginBottom: '8px', fontWeight: 600 }}>Regime Identification</h4>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--color-sage)', lineHeight: '1.6' }}>
+                    Analyzes live narrative flows, sentiment shift alerts, and institutional momentum indexes to map current market regimes.
+                  </p>
+                </div>
+                <div className="clay-glass" style={{ padding: '24px', borderRadius: '16px' }}>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--color-wire-gold)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700 }}>Pillar 02</div>
+                  <h4 style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', color: 'var(--color-linen)', marginBottom: '8px', fontWeight: 600 }}>SoDEX Contract Routing</h4>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--color-sage)', lineHeight: '1.6' }}>
+                    Signs and dispatches EIP-712 order messages directly to the SoDEX decentralized exchange router for sub-second execution.
+                  </p>
+                </div>
+                <div className="clay-glass" style={{ padding: '24px', borderRadius: '16px' }}>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--color-wire-gold)', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 700 }}>Pillar 03</div>
+                  <h4 style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', color: 'var(--color-linen)', marginBottom: '8px', fontWeight: 600 }}>On-Chain Risk Controls</h4>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--color-sage)', lineHeight: '1.6' }}>
+                    Enforces automated daily loss thresholds, execution cooldown windows, and maximum position sizes at the contract layer.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         ) : (
           /* Disconnected Gated View */
@@ -270,6 +299,21 @@ export default function HomePage() {
                       <div key={i} className="clay-glass" style={{ padding: '20px', borderRadius: '16px' }}>
                         <div style={{ height: '10px', width: '80px', backgroundColor: 'var(--color-iron)', marginBottom: '8px' }} />
                         <div style={{ height: '24px', width: '60px', backgroundColor: 'var(--color-iron)' }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Blurred Loop Architecture */}
+                <div style={{ marginTop: '40px' }}>
+                  <h3 className="section-heading" style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Autonomous Loop Architecture</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="clay-glass" style={{ padding: '20px', borderRadius: '16px' }}>
+                        <div style={{ height: '12px', width: '60px', backgroundColor: 'var(--color-iron)', marginBottom: '12px' }} />
+                        <div style={{ height: '16px', width: '120px', backgroundColor: 'var(--color-iron)', marginBottom: '8px' }} />
+                        <div style={{ height: '8px', width: '100%', backgroundColor: 'var(--color-iron)', marginBottom: '6px' }} />
+                        <div style={{ height: '8px', width: '80%', backgroundColor: 'var(--color-iron)' }} />
                       </div>
                     ))}
                   </div>
@@ -446,6 +490,7 @@ export default function HomePage() {
           </div>
         )}
       </AnimatePresence>
+      <Footer />
     </main>
   );
 }
