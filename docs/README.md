@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚡ AlphaWire</h1>
+  <h1 align="center">Cinder</h1>
   <p align="center"><strong>The AI Newsroom That Trades Its Own Stories</strong></p>
   <p align="center">
     An autonomous financial wire service that publishes AI-written market intelligence<br/>
@@ -28,7 +28,7 @@ Crypto traders face three compounding problems:
 
 ## The Solution
 
-**AlphaWire** solves all three by combining an **AI financial wire service** with a **narrative regime detection engine** and an **automated trading executor**:
+**Cinder** solves all three by combining an **AI financial wire service** with a **narrative regime detection engine** and an **automated trading executor**:
 
 | Layer | What It Does | How |
 |---|---|---|
@@ -36,7 +36,7 @@ Crypto traders face three compounding problems:
 | 🧠 **Narrative Layer** | Detects when the dominant market story is changing | NLP pipeline classifies narrative regimes and tracks temperature shifts |
 | ⚡ **Execution Layer** | Trades the narrative shift before the crowd | Auto-executes on SoDEX with risk controls, stop-losses, and human override |
 
-> **The key insight:** The published news articles *are* the trade rationale. Every trade AlphaWire makes has a corresponding article explaining exactly why. Full transparency — no black-box trading.
+> **The key insight:** The published news articles *are* the trade rationale. Every trade Cinder makes has a corresponding article explaining exactly why. Full transparency — no black-box trading.
 
 ---
 
@@ -88,7 +88,7 @@ Crypto traders face three compounding problems:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        ALPHAWIRE SYSTEM                         │
+│                        CINDER SYSTEM                         │
 │                                                                 │
 │  ┌──────────────┐   ┌───────────────┐   ┌──────────────────┐   │
 │  │  DATA LAYER  │──▶│  BRAIN LAYER  │──▶│  OUTPUT LAYER    │   │
@@ -127,7 +127,7 @@ Crypto traders face three compounding problems:
 
 ### SoSoValue API (Data & Intelligence)
 
-AlphaWire uses **three** SoSoValue API endpoint categories:
+Cinder uses **three** SoSoValue API endpoint categories:
 
 | Endpoint Category | Used For | Update Frequency |
 |---|---|---|
@@ -137,7 +137,7 @@ AlphaWire uses **three** SoSoValue API endpoint categories:
 
 ### SoDEX API (Execution)
 
-AlphaWire uses **four** SoDEX API capabilities:
+Cinder uses **four** SoDEX API capabilities:
 
 | Capability | Used For | Auth Required |
 |---|---|---|
@@ -162,8 +162,8 @@ AlphaWire uses **four** SoDEX API capabilities:
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/alphawire.git
-cd alphawire
+git clone https://github.com/YOUR_USERNAME/cinder.git
+cd Cinder
 
 # Install frontend dependencies
 npm install
@@ -221,7 +221,7 @@ python engine/main.py
 
 ### Running on Testnet
 
-AlphaWire ships pre-configured for **SoDEX Testnet**. No real funds required for demo.
+Cinder ships pre-configured for **SoDEX Testnet**. No real funds required for demo.
 
 ```bash
 # Ensure .env uses testnet URLs
@@ -236,7 +236,7 @@ AUTO_TRADE_ENABLED=true npm run dev
 ## Project Structure
 
 ```
-alphawire/
+cinder/
 ├── README.md                       # This file
 ├── docs/
 │   ├── ARCHITECTURE.md             # Detailed technical architecture
@@ -305,7 +305,7 @@ alphawire/
 ## Demo
 
 ### Live Demo
-🌐 **[https://alphawire.vercel.app](https://alphawire.vercel.app)** *(deployed during buildathon)*
+🌐 **[https://cinder.vercel.app](https://cinder.vercel.app)** *(deployed during buildathon)*
 
 ### Demo Video
 🎥 **[Watch the 2-minute walkthrough →](#)** *(link to be added)*
@@ -322,7 +322,7 @@ alphawire/
 
 ## Buildathon Criteria Coverage
 
-| Criterion | How AlphaWire Addresses It | Status |
+| Criterion | How Cinder Addresses It | Status |
 |---|---|---|
 | ✅ Genuine SoSoValue API integration | Uses ETF flows, AI news feed, and sector/index data as the sole data source for all intelligence | **Core** |
 | ✅ Clear use case | Autonomous financial wire service + narrative-driven portfolio management | **Core** |
