@@ -259,13 +259,19 @@ export default function HomePage() {
             {/* Clickable Gated Area Wrapper (Centers absolutely positioned children relative to it) */}
             <div 
               onClick={() => setIsConnectModalOpen(true)}
-              style={{ cursor: 'pointer', maxWidth: '480px', margin: '0 auto', position: 'relative' }}
+              style={{ 
+                cursor: 'pointer', 
+                maxWidth: '480px', 
+                margin: '0 auto', 
+                position: 'relative',
+                borderRadius: '14px',
+                overflow: 'hidden' // Keeps absolute overlay inside card boundaries
+              }}
             >
-              {/* Blurred Preview content container */}
+              {/* Preview content container (unblurred here, blurred by overlay backdrop-filter) */}
               <div 
                 style={{ 
-                  filter: 'blur(14px)', 
-                  opacity: 0.22, 
+                  opacity: 0.6, 
                   transition: 'all 0.5s ease',
                   userSelect: 'none',
                   pointerEvents: 'none'
@@ -326,48 +332,65 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Central Call to Action Overlay (Centered perfectly over the 480px card container) */}
+              {/* Central Call to Action Overlay (Fits EXACTLY 100% width and height on top of the card) */}
               <div 
-                className="clay-glass"
                 style={{
                   position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
                   zIndex: 20,
-                  width: '90%',
-                  maxWidth: '400px',
-                  padding: '32px 20px',
-                  textAlign: 'center',
+                  borderRadius: '14px',
+                  border: '1px solid rgba(212, 168, 83, 0.35)',
+                  background: 'rgba(30, 32, 30, 0.65)',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '14px',
-                  border: '1px solid rgba(212, 168, 83, 0.3)',
-                  boxShadow: '0 16px 48px rgba(0,0,0,0.85), inset 0 1px 0 rgba(212, 168, 83, 0.15)'
+                  justifyContent: 'center',
+                  gap: '12px',
+                  padding: '20px',
+                  textAlign: 'center',
+                  boxShadow: 'inset 0 1px 0 rgba(212, 168, 83, 0.1)'
                 }}
               >
-                <h2 style={{ fontSize: '1.25rem', color: 'var(--color-wire-gold)', fontWeight: 700, fontFamily: 'var(--font-display)', margin: 0 }}>
+                <h2 style={{ 
+                  fontSize: '1.15rem', 
+                  color: 'var(--color-wire-gold)', 
+                  fontWeight: 700, 
+                  fontFamily: 'var(--font-display)', 
+                  margin: 0,
+                  letterSpacing: '-0.01em'
+                }}>
                   Unlock Market Intelligence
                 </h2>
-                <p style={{ fontSize: '0.8rem', color: 'var(--color-sage)', lineHeight: '1.55', fontFamily: 'var(--font-body)', margin: 0 }}>
-                  Connect your Web3 wallet and claim demo CINDER tokens to unlock real-time ETF flows, narrative analysis, and automated trade execution logs on SoDEX.
+                <p style={{ 
+                  fontSize: '0.75rem', 
+                  color: 'var(--color-linen)', 
+                  opacity: 0.8,
+                  lineHeight: '1.45', 
+                  fontFamily: 'var(--font-body)', 
+                  margin: 0,
+                  maxWidth: '360px'
+                }}>
+                  Connect Web3 wallet to read this story, track ETF flows, and view SoDEX trades.
                 </p>
                 <button 
                   onClick={() => setIsConnectModalOpen(true)}
                   className="btn-hero-primary"
                   style={{ 
-                    padding: '10px 24px', 
-                    fontSize: '0.8rem', 
+                    padding: '8px 20px', 
+                    fontSize: '0.75rem', 
                     fontWeight: 700, 
-                    borderRadius: '10px',
+                    borderRadius: '8px',
                     cursor: 'pointer',
                     fontFamily: 'var(--font-body)',
-                    border: 'none',
-                    marginTop: '4px'
+                    border: 'none'
                   }}
                 >
-                  Connect Wallet to Unlock
+                  Connect Wallet
                 </button>
               </div>
             </div>
