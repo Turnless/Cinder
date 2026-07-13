@@ -396,6 +396,112 @@ export default function HomePage() {
             </div>
           </div>
         )}
+
+        {/* Landing Page Features (Visible in both states, before footer) */}
+        <div style={{ marginTop: '56px', borderTop: '1px solid rgba(236,223,204,0.06)', paddingTop: '40px' }}>
+          <h3 style={{ 
+            fontFamily: 'var(--font-display)', 
+            fontSize: '1.25rem', 
+            fontWeight: 800, 
+            color: 'var(--color-linen)', 
+            borderLeft: '4px solid var(--color-wire-gold)', 
+            paddingLeft: '16px',
+            letterSpacing: '-0.01em',
+            textTransform: 'uppercase',
+            marginBottom: '28px',
+            margin: '0 0 28px 0'
+          }}>
+            Protocol Capabilities
+          </h3>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}>
+            {/* Feature 1: Cryptographic Signatures */}
+            <div className="clay-glass" style={{ padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--glass-border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ 
+                  fontFamily: 'var(--font-mono)', 
+                  fontSize: '0.65rem', 
+                  color: 'var(--color-wire-gold)', 
+                  background: 'rgba(212, 168, 83, 0.08)',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(212, 168, 83, 0.2)'
+                }}>
+                  SECURITY
+                </span>
+                <h4 style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', fontWeight: 700, color: 'var(--color-linen)', margin: 0 }}>
+                  EIP-712 Order Verification
+                </h4>
+              </div>
+              <p style={{ fontSize: '0.82rem', color: 'var(--color-sage)', lineHeight: '1.6', margin: 0 }}>
+                Cinder validates all trading parameters off-chain using signed typed structured data. This prevents unauthorized execution and guarantees order validity on the smart contract layer.
+              </p>
+              
+              {/* Simulated signature console */}
+              <div style={{ 
+                background: 'rgba(15,16,14,0.4)', 
+                border: '1px solid var(--glass-border)', 
+                borderRadius: '12px', 
+                padding: '14px', 
+                fontFamily: 'var(--font-mono)', 
+                fontSize: '0.7rem', 
+                color: 'var(--color-linen)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px'
+              }}>
+                <div style={{ color: 'var(--color-sage)' }}>// OFF-CHAIN ORDER PAYLOAD</div>
+                <div>{`{`}</div>
+                <div style={{ paddingLeft: '12px' }}>"signer": <span style={{ color: 'var(--color-wire-gold)' }}>"0x71C...39A"</span>,</div>
+                <div style={{ paddingLeft: '12px' }}>"route": <span style={{ color: 'var(--color-data-blue)' }}>"SoDEX_Router"</span>,</div>
+                <div style={{ paddingLeft: '12px' }}>"limit": <span style={{ color: 'var(--color-pulse-green)' }}>15,000 USDC</span></div>
+                <div>{`}`}</div>
+                <div style={{ borderTop: '1px solid rgba(236,223,204,0.06)', marginTop: '6px', paddingTop: '6px', color: 'var(--color-pulse-green)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  sig: 0x8b32f22d...15e21a
+                </div>
+              </div>
+            </div>
+
+            {/* Feature 2: Multi-Gate Risk Engine */}
+            <div className="clay-glass" style={{ padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--glass-border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ 
+                  fontFamily: 'var(--font-mono)', 
+                  fontSize: '0.65rem', 
+                  color: 'var(--color-wire-gold)', 
+                  background: 'rgba(212, 168, 83, 0.08)',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(212, 168, 83, 0.2)'
+                }}>
+                  RISK CONTROL
+                </span>
+                <h4 style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', fontWeight: 700, color: 'var(--color-linen)', margin: 0 }}>
+                  Multi-Gate Risk Engine
+                </h4>
+              </div>
+              <p style={{ fontSize: '0.82rem', color: 'var(--color-sage)', lineHeight: '1.6', margin: 0 }}>
+                Every automated transaction passes through five independent validation checkgates. These constraints prevent systemic slippage, run-away trading cycles, and excessive portfolio exposure.
+              </p>
+              
+              {/* Checkgates visual list */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.75rem', marginTop: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(236,223,204,0.04)', paddingBottom: '6px' }}>
+                  <span style={{ color: 'var(--color-linen)', fontWeight: 500 }}>1. Cooldown Constraint</span>
+                  <span style={{ color: 'var(--color-pulse-green)', fontFamily: 'var(--font-mono)' }}>VERIFIED</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(236,223,204,0.04)', paddingBottom: '6px' }}>
+                  <span style={{ color: 'var(--color-linen)', fontWeight: 500 }}>2. Max Daily Drawdown (&lt;3.0%)</span>
+                  <span style={{ color: 'var(--color-pulse-green)', fontFamily: 'var(--font-mono)' }}>VERIFIED</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(236,223,204,0.04)', paddingBottom: '6px' }}>
+                  <span style={{ color: 'var(--color-linen)', fontWeight: 500 }}>3. Max Position Limit (&lt;15%)</span>
+                  <span style={{ color: 'var(--color-pulse-green)', fontFamily: 'var(--font-mono)' }}>VERIFIED</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Connect Wallet Modal Pop-out Overlay */}
