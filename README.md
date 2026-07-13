@@ -73,6 +73,17 @@ Crypto traders face three compounding problems:
 - Real-time portfolio dashboard with positions, PnL, and allocation breakdown
 - Trade history linked to the stories that triggered each trade
 
+### 🦊 Web3 Wallet Provider Integration
+- Detects injected browser wallets (MetaMask, Rabby, Coinbase Wallet, etc.) conforming to **EIP-1193**
+- Performs standard Web3 handshakes (`eth_requestAccounts`) and tracks native gas balances (`eth_getBalance`)
+- Observes live session changes (`accountsChanged`, `chainChanged`) to handle hot account swaps dynamically
+- Built-in testnet CNDR faucet persisting token balances per address in localStorage
+
+### 🔒 Navigation Gating & Session Redirects
+- Restricts dApp routes `/dashboard` and `/portfolio` to connected wallet sessions only
+- Automatically intercepts disconnected users using Next.js `useRouter` redirects and pushes them back to `/`
+- Render-gated home page feed showing a compact, blurred teaser story card with backdrop-filter blur and exact border alignment if disconnected
+
 ### 🔔 Alert System
 - Telegram bot for real-time narrative shift alerts and trade notifications
 - Configurable alert thresholds (notify at 60°, trade at 80°)
@@ -109,12 +120,14 @@ Crypto traders face three compounding problems:
 | Component | Technology | Rationale |
 |---|---|---|
 | Frontend | Next.js 14 (App Router) | SSR for SEO, API routes for backend logic |
-| Styling | Vanilla CSS + CSS Variables | Dark theme, no framework overhead |
+| Styling | Vanilla CSS + CSS Variables | Dark theme, obsidian clay-glass layout, no framework overhead |
+| Web3 Wallet | EIP-1193 / window.ethereum RPC | Connection to real wallets (MetaMask, Rabby) and fetching native balances |
 | Charts | Recharts + D3.js | Recharts for story charts, D3 for narrative bubble map |
 | Animation | Framer Motion | Smooth narrative transitions and live updates |
 | AI/LLM | OpenAI GPT-4o | Story generation + narrative classification |
 | Database | SQLite (via better-sqlite3) | Note that production runs on Turso(libSQL); Zero-config, perfect for hackathon; stores stories, narrative history, trades |
 | Real-time | Server-Sent Events (SSE) | Live story updates on the news feed |
+| Testing | Vitest | Fast unit testing scaffolding with database and OpenAI mocks |
 | Trading | SoDEX REST API | Order placement, cancellation, account management |
 | Data | SoSoValue REST API | ETF flows, AI news feed, sector/index data |
 | Alerts | Telegram Bot API | Narrative shift + trade notifications |
@@ -230,6 +243,33 @@ SODEX_API_BASE_URL=https://testnet-gw.sodex.dev/api/v1
 # Start with auto-trading enabled (safe on testnet)
 AUTO_TRADE_ENABLED=true npm run dev
 ```
+
+### ⛽ EIP-4337 Paymaster & On-Chain Token Deploy Setup
+
+To deploy the CNDR token to a live testnet (such as Sepolia or Base Sepolia) and enable users to pay for execution gas fees in CNDR, you must provide:
+
+1. **JSON-RPC Node URL**: An HTTP endpoint for your target testnet (e.g. from Infura, Alchemy, or QuickNode) configured in `.env`.
+2. **Deployer Private Key**: An EVM private key holding a small amount of native gas tokens (e.g., Sepolia ETH) to sign and fund the contract deployment.
+3. **Paymaster Sponsor Configuration**:
+   - Integrate an Account Abstraction SDK (like **Biconomy**, **ZeroDev**, or **Pimlico**).
+   - Configure a Token Paymaster contract pre-funded with native ETH. The Paymaster deducts CNDR from the user's smart wallet and pays the native gas ETH to the network bundlers.
+   - Set up the Paymaster API keys in the Next.js API router.
+
+To deploy the CNDR ERC-20 contract using Hardhat, run:
+```bash
+npx hardhat run scripts/deploy.js --network sepolia
+```
+
+### 🧪 Running Unit Tests & CI
+
+Cinder includes a comprehensive unit testing suite using **Vitest** to verify the core trading logic, EIP-712 order validation parameters, and narrative shift detections. All database calls and OpenAI API completions are mocked.
+
+To run the test suite locally:
+```bash
+npm run test
+```
+
+A GitHub Actions workflow is configured under `.github/workflows/ci.yml` that automatically validates the codebase (lint + test execution) on every Pull Request.
 
 ---
 

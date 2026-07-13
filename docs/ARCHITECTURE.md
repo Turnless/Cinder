@@ -765,6 +765,28 @@ generate-pulse (every 4 hours)
 
 ---
 
+## Web3 Wallet & Gating Architecture
+
+### Provider Handshake (EIP-1193)
+Cinder integrates directly with injected browser wallet providers (MetaMask, Rabby, Coinbase Wallet) utilizing EIP-1193 RPC standards. The application context maintains live connections through `WalletContext`:
+- **Accounts Request**: Dispatches `eth_requestAccounts` when users interact with connection triggers.
+- **Native Balance Tracking**: Requests `eth_getBalance` to query and parse native gas assets (`ETH`) from the network node.
+- **Observer Listeners**:
+  - `accountsChanged`: Automatically shifts active context credentials, balances, and locks if users select a different address.
+  - `chainChanged`: Forces standard page reloads to prevent cross-network caching issues.
+
+### Session Gating & Router Interceptors
+To secure sensitive dApp endpoints (`/dashboard` and `/portfolio`):
+- **Client Route Interceptors**: The Next.js client renders checks against the connection context. If the wallet is disconnected, standard pages are pre-empted with `router.push('/')` redirects.
+- **Preview Teasers**: The landing page `/` displays a single latest story teaser. The teaser card content is readable but covered by an absolute-positioned, glassmorphic `Unlock Market Intelligence` card utilizing `backdrop-filter: blur(10px)`. Clicking this card triggers the Connect Wallet modal.
+
+### EIP-4337 Paymaster & ERC-20 Gas Architecture
+To enable gasless CNDR token operations on-chain:
+- **ERC-20 CNDR Faucet Contract**: Holds test allocations and enforces cooldown limits (1,000 CNDR per day per address).
+- **Paymaster Reimbursement**: Under EIP-4337, transactions are submitted as `UserOperations` to a Bundler. The CNDR Token Paymaster contract intercepts the call, burns the gas fee equivalent in CNDR tokens from the user's Smart Wallet balance, and reimburses the Bundler in native testnet gas (ETH) from its own reserve pool.
+
+---
+
 ## Error Handling & Resilience
 
 | Failure | Handling |
