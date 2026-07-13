@@ -252,7 +252,7 @@ export default function HomePage() {
                 textTransform: 'uppercase',
                 margin: 0
               }}>
-                Latest Market Intelligence
+                Latest Market News
               </h3>
             </div>
 
@@ -364,7 +364,7 @@ export default function HomePage() {
                   margin: 0,
                   letterSpacing: '-0.01em'
                 }}>
-                  Unlock Market Intelligence
+                  Unlock Market News
                 </h2>
                 <p style={{ 
                   fontSize: '0.75rem', 
