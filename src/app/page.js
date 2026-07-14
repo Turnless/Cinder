@@ -10,6 +10,21 @@ import StoryCard from '../components/wire/StoryCard';
 import TemperatureGauge from '../components/narrative/TemperatureGauge';
 import { useWallet } from '../context/WalletContext';
 
+function getRelativeTimeString(dateString) {
+  if (!dateString) return '5m ago';
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${diffDays}d ago`;
+}
+
 export default function HomePage() {
   const { scrollY } = useScroll();
   const { isConnected, connectWallet, isConnecting } = useWallet();
@@ -246,7 +261,7 @@ export default function HomePage() {
                       {latestStory?.type || 'Update'}
                     </span>
                     <span style={{ fontSize: '0.65rem', fontFamily: 'var(--font-mono)', color: 'var(--color-sage)' }}>
-                      5m ago
+                      {latestStory ? getRelativeTimeString(latestStory.published_at) : '5m ago'}
                     </span>
                   </div>
 
@@ -447,10 +462,14 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Connect Wallet Modal Pop-out Overlay */}
       <AnimatePresence>
         {isConnectModalOpen && (
-          <div className="story-modal-wrapper-fixed">
+          <motion.div 
+            className="story-modal-wrapper-fixed"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
             <motion.div 
               className="story-modal-backdrop"
               initial={{ opacity: 0 }}
@@ -565,7 +584,7 @@ export default function HomePage() {
                 </div>
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
       <Footer />
