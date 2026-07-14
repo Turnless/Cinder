@@ -47,7 +47,7 @@ export default function FeedPage() {
                 fontSize: '2.5rem', 
                 borderLeft: '4px solid var(--color-wire-gold)', 
                 paddingLeft: '20px',
-                fontFamily: 'var(--font-display)',
+                fontFamily: 'var(--font-body)',
                 fontWeight: 800,
                 textTransform: 'uppercase',
                 color: 'var(--color-linen)',
@@ -60,7 +60,7 @@ export default function FeedPage() {
           </motion.div>
           
           {/* Dynamic 4-Column News Portal Feed */}
-          <div className="feed-layout" style={{ marginTop: '24px' }}>
+          <div style={{ marginTop: '24px', width: '100%' }}>
             <StoryFeed 
               temperatureWidget={
                 <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '14px', height: '100%' }}>
