@@ -222,7 +222,7 @@ export function WalletProvider({ children }) {
       setTimeout(() => {
         const key = `cinder_cndr_balance_${walletAddress.toLowerCase()}`;
         const currentCndr = parseFloat(localStorage.getItem(key) || 0);
-        const newCndr = currentCndr + 1000;
+        const newCndr = currentCndr + 10000;
         localStorage.setItem(key, newCndr.toString());
         setBalance(newCndr);
         setIsClaiming(false);

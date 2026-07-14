@@ -161,10 +161,10 @@ export default function Header() {
                   {isClaiming ? (
                     <>
                       <span className="shimmer-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--color-wire-gold)', display: 'inline-block' }} />
-                      <span>Claiming 1,000 CNDR...</span>
+                      <span>Claiming 10,000 CNDR...</span>
                     </>
                   ) : (
-                    <span>Claim 1,000 Test CNDR</span>
+                    <span>Claim 10,000 Test CNDR</span>
                   )}
                 </button>
 

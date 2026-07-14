@@ -26,7 +26,7 @@ contract CinderToken is IERC20 {
     mapping(address => mapping(address => uint256)) private _allowances;
 
     address public owner;
-    uint256 public constant FAUCET_AMOUNT = 1000 * 10**18; // 1,000 CNDR
+    uint256 public constant FAUCET_AMOUNT = 10000 * 10**18; // 10,000 CNDR
     uint256 public constant COOLDOWN_TIME = 1 days;
     mapping(address => uint256) public lastClaimed;
 
