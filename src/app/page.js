@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
+import { useRouter } from 'next/navigation';
 import Header from '../components/shared/Header';
 import Footer from '../components/shared/Footer';
 import StoryFeed from '../components/wire/StoryFeed';
@@ -12,6 +13,7 @@ import { useWallet } from '../context/WalletContext';
 export default function HomePage() {
   const { scrollY } = useScroll();
   const { isConnected, connectWallet, isConnecting } = useWallet();
+  const router = useRouter();
   
   const [latestStory, setLatestStory] = useState(null);
   const [loadingStory, setLoadingStory] = useState(true);
@@ -21,6 +23,13 @@ export default function HomePage() {
   const heroOpacity = useTransform(scrollY, [0, 400], [1, 0]);
   const heroScale = useTransform(scrollY, [0, 400], [1, 0.92]);
   const heroY = useTransform(scrollY, [0, 400], [0, -60]);
+
+  // Auto-redirect connected wallets to /feed page
+  useEffect(() => {
+    if (isConnected) {
+      router.push('/feed');
+    }
+  }, [isConnected, router]);
 
   // Fetch only the single latest story for the compact disconnected preview
   useEffect(() => {

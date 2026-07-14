@@ -62,7 +62,7 @@ export default function Header() {
           {isConnected && (
             <ul className="nav-links">
               <li>
-                <Link href="/" className={pathname === '/' ? 'active' : ''}>
+                <Link href="/feed" className={pathname === '/feed' ? 'active' : ''}>
                   Feed
                 </Link>
               </li>
