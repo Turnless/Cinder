@@ -94,7 +94,7 @@ Fetch, normalize, and cache data from SoSoValue APIs on a scheduled basis.
 │  └─ getCoinData(symbol)            → Price, volume, mcap     │
 │                                                              │
 │  Config:                                                     │
-│  ├─ Base URL: https://api.sosovalue.com/v1                   │
+│  ├─ Base URL: https://api.sosovalue.xyz/v1                   │
 │  ├─ Auth: API key in Authorization header                    │
 │  ├─ Rate limit: 20 calls/min (Demo tier)                     │
 │  └─ Retry: 3 attempts with exponential backoff               │

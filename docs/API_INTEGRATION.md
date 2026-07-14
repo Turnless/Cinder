@@ -14,7 +14,7 @@ All requests to the SoSoValue API must include the API key in the `Authorization
 
 ```http
 GET /v1/etf/btc/flow HTTP/1.1
-Host: api.sosovalue.com
+Host: api.sosovalue.xyz
 Authorization: Bearer YOUR_SOSOVALUE_API_KEY
 Accept: application/json
 ```

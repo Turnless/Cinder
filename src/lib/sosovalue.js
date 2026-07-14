@@ -53,7 +53,7 @@ async function rateLimit() {
  */
 async function fetchFromSoSoValue(endpoint, params = {}) {
   const apiKey = process.env.SOSOVALUE_API_KEY || '';
-  const baseUrl = process.env.SOSOVALUE_API_URL || 'https://api.sosovalue.com/v1';
+  const baseUrl = process.env.SOSOVALUE_API_URL || 'https://api.sosovalue.xyz/v1';
 
   const url = new URL(`${baseUrl}${endpoint}`);
   Object.entries(params).forEach(([key, value]) => {
