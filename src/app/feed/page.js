@@ -31,7 +31,7 @@ export default function FeedPage() {
   }
 
   return (
-    <main style={{ backgroundColor: 'var(--color-obsidian)', minHeight: '100vh', overflowX: 'hidden' }}>
+    <main style={{ backgroundColor: 'var(--color-obsidian)', minHeight: '100vh', overflowX: 'clip' }}>
       <Header />
 
       {/* Main Feed Container */}
