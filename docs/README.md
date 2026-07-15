@@ -366,7 +366,7 @@ cinder/
 ## Demo
 
 ### Live Demo
-🌐 **[https://cinder.vercel.app](https://cinder.vercel.app)** *(deployed during buildathon)*
+🌐 **[https://cinderhq.vercel.app](https://cinderhq.vercel.app)** *(deployed during buildathon)*
 
 ### Demo Video
 🎥 **[Watch the 2-minute walkthrough →](#)** *(link to be added)*
