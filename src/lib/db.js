@@ -145,8 +145,18 @@ export async function batch(statements) {
  */
 export async function initializeDb() {
   try {
-    const migrationPath = path.join(process.cwd(), 'migrations', '0001_init.sql');
-    if (fs.existsSync(migrationPath)) {
+    const migrationsDir = path.join(process.cwd(), 'migrations');
+    if (!fs.existsSync(migrationsDir)) {
+      console.warn(`[WARNING] Migrations directory not found at ${migrationsDir}`);
+      return;
+    }
+
+    const files = fs.readdirSync(migrationsDir)
+      .filter(f => f.endsWith('.sql'))
+      .sort();
+
+    for (const file of files) {
+      const migrationPath = path.join(migrationsDir, file);
       const sqlContent = fs.readFileSync(migrationPath, 'utf8');
       const statements = sqlContent
         .split(/;\s*[\r\n]+/)
@@ -159,15 +169,32 @@ export async function initializeDb() {
         })
         .filter(stmt => stmt.length > 0);
 
+      if (statements.length === 0) continue;
+
       const batchStmts = statements.map(sql => ({
         sql: sql.endsWith(';') ? sql : sql + ';',
         args: []
       }));
-      
-      await batch(batchStmts);
-      console.log('[SUCCESS] Database schema migration successfully initialized!');
-    } else {
-      console.warn(`[WARNING] Migration file not found at ${migrationPath}`);
+
+      try {
+        // Run each statement individually so non-fatal errors (like duplicate column) don't block others
+        for (const stmt of batchStmts) {
+          try {
+            await execute(stmt.sql, stmt.args);
+          } catch (stmtErr) {
+            if (stmtErr.message && stmtErr.message.includes('duplicate column')) {
+              // Column already exists — skip silently
+            } else if (stmtErr.message && stmtErr.message.includes('already exists')) {
+              // Index or table already exists — skip silently
+            } else {
+              console.warn(`[WARNING] Migration ${file} statement failed:`, stmtErr.message);
+            }
+          }
+        }
+        console.log(`[SUCCESS] Migration ${file} applied.`);
+      } catch (err) {
+        console.error(`[ERROR] Migration ${file} failed:`, err.message);
+      }
     }
   } catch (err) {
     console.error('[ERROR] Failed to auto-initialize DB:', err);

@@ -254,20 +254,24 @@ export async function getTicker(pair, market = 'spot') {
   } catch (err) {
     try {
       const baseToken = pair.split('-')[0].toUpperCase();
-      const binanceSymbol = `${baseToken}USDT`;
-      const response = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${binanceSymbol}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.price) {
-          console.warn(`[WARNING] Using Binance fallback price for ${pair}.`);
-          return {
-            pair,
-            price: parseFloat(data.price).toString()
-          };
+      const coinIdMap = { BTC: 'bitcoin', ETH: 'ethereum', SOL: 'solana', UNI: 'uniswap', AAVE: 'aave', DOGE: 'dogecoin' };
+      const coinId = coinIdMap[baseToken];
+      if (coinId) {
+        const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`, { signal: AbortSignal.timeout(5000) });
+        if (response.ok) {
+          const data = await response.json();
+          const price = data[coinId]?.usd;
+          if (price) {
+            console.warn(`[WARNING] Using CoinGecko fallback price for ${pair}.`);
+            return {
+              pair,
+              price: parseFloat(price).toString()
+            };
+          }
         }
       }
     } catch {
-      console.warn(`[WARNING] Binance public API fallback failed for ${binanceSymbol}.`);
+      console.warn(`[WARNING] CoinGecko public API fallback failed for ${pair}.`);
     }
     throw err;
   }

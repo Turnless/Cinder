@@ -1,15 +1,25 @@
 import { NextResponse } from 'next/server';
-import { query, execute } from '../../../lib/db';
+import { query, execute, initializeDb } from '../../../lib/db';
 import { getAccountState, placeOrder, getTicker } from '../../../lib/sodex';
 import { ethers } from 'ethers';
 
 export const dynamic = 'force-dynamic';
+
+let dbInitialized = false;
 
 /**
  * GET /api/trade
  * Retrieves SoDEX account state, open positions, and executed trade logs.
  */
 export async function GET(request) {
+  try {
+    if (!dbInitialized) {
+      await initializeDb();
+      dbInitialized = true;
+    }
+  } catch (initErr) {
+    console.warn('[WARNING] DB initialization error:', initErr.message);
+  }
   try {
     const { searchParams } = new URL(request.url);
     const paramAddress = searchParams.get('address');
@@ -27,19 +37,26 @@ export async function GET(request) {
         const ticker = await getTicker(paramTicker);
         return NextResponse.json({ success: true, price: ticker.price || '0.00' });
       } catch (err) {
-        // SoDEX failed — try Binance directly as fallback
+        // SoDEX failed — try CoinGecko directly as fallback
         try {
           const baseToken = paramTicker.split('-')[0].toUpperCase();
-          const binanceSymbol = `${baseToken}USDT`;
-          const binanceRes = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${binanceSymbol}`);
-          if (binanceRes.ok) {
-            const binanceData = await binanceRes.json();
-            if (binanceData.price) {
-              return NextResponse.json({ success: true, price: parseFloat(binanceData.price).toString() });
+          const coinIdMap = { BTC: 'bitcoin', ETH: 'ethereum', SOL: 'solana', UNI: 'uniswap', AAVE: 'aave', DOGE: 'dogecoin' };
+          const coinId = coinIdMap[baseToken];
+          if (coinId) {
+            const coinGeckoUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`;
+            console.log(`[TICKER] Trying CoinGecko fallback: ${coinGeckoUrl}`);
+            const cgRes = await fetch(coinGeckoUrl, { signal: AbortSignal.timeout(5000) });
+            console.log(`[TICKER] CoinGecko response status: ${cgRes.status}`);
+            if (cgRes.ok) {
+              const cgData = await cgRes.json();
+              const price = cgData[coinId]?.usd;
+              if (price) {
+                return NextResponse.json({ success: true, price: parseFloat(price).toString() });
+              }
             }
           }
-        } catch (binanceErr) {
-          console.warn(`[WARNING] Binance fallback also failed for ${paramTicker}:`, binanceErr.message);
+        } catch (cgErr) {
+          console.warn(`[WARNING] CoinGecko fallback also failed for ${paramTicker}:`, cgErr.message);
         }
         // Final fallback: mock prices
         let mockPrice = '1.00';
