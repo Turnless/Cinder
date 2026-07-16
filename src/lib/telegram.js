@@ -177,10 +177,11 @@ export async function sendDailyDigest(portfolioSummary) {
  * @returns {boolean} True if the request is verified as authentic
  */
 export function verifyTelegramSignature(signature, body) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) return false;
-  
-  // Telegram webhooks can be verified by checking if the custom header (e.g. X-Telegram-Bot-Api-Secret-Token)
-  // matches our token or a secret token we configure. We default to comparing it with the bot token.
-  return signature === token;
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!secret) {
+    // Fallback to bot token if no dedicated secret is set
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    return signature === token;
+  }
+  return signature === secret;
 }
