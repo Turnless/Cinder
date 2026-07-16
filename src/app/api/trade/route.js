@@ -127,7 +127,8 @@ export async function GET(request) {
     if (isMockMode || positions.length === 0) {
       if (userAddress) {
         // Dynamically compute positions based on filled trades in database for this user
-        const dbTrades = await query("SELECT * FROM trades WHERE status = 'filled'");
+        const userAddrLower = userAddress.toLowerCase();
+        const dbTrades = await query("SELECT * FROM trades WHERE status = 'filled' AND user_address = ?", [userAddrLower]);
         const userPositions = {};
 
         for (const t of dbTrades) {
@@ -212,17 +213,47 @@ export async function GET(request) {
     }
 
     // Retrieve trade history from the local database
-    const dbTrades = await query(`
-      SELECT t.*, s.story_id 
-      FROM trades t
-      LEFT JOIN narrative_shifts s ON t.shift_id = s.id
-      ORDER BY t.created_at DESC 
-      LIMIT 50
-    `);
+    const tradeHistoryAddr = paramAddress ? paramAddress.toLowerCase() : null;
+    const dbTrades = tradeHistoryAddr
+      ? await query(`
+          SELECT t.*, s.story_id 
+          FROM trades t
+          LEFT JOIN narrative_shifts s ON t.shift_id = s.id
+          WHERE t.user_address = ?
+          ORDER BY t.created_at DESC 
+          LIMIT 50
+        `, [tradeHistoryAddr])
+      : await query(`
+          SELECT t.*, s.story_id 
+          FROM trades t
+          LEFT JOIN narrative_shifts s ON t.shift_id = s.id
+          ORDER BY t.created_at DESC 
+          LIMIT 50
+        `);
+
+    // Calculate per-user virtual balance from trade history
+    const INITIAL_VIRTUAL_BALANCE = 10000.00;
+    let virtualBalance = INITIAL_VIRTUAL_BALANCE;
+    if (tradeHistoryAddr) {
+      const userTrades = await query(
+        "SELECT side, quantity, fill_price FROM trades WHERE user_address = ? AND status = 'filled' ORDER BY created_at ASC",
+        [tradeHistoryAddr]
+      );
+      for (const t of userTrades) {
+        const qty = parseFloat(t.quantity || '0');
+        const price = parseFloat(t.fill_price || '0');
+        const cost = qty * price;
+        if (t.side.toLowerCase() === 'buy') {
+          virtualBalance -= cost;
+        } else if (t.side.toLowerCase() === 'sell') {
+          virtualBalance += cost;
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,
-      balance,
+      balance: tradeHistoryAddr ? virtualBalance.toFixed(2) : balance,
       positions,
       trades: dbTrades,
       riskConfig: {
@@ -246,18 +277,63 @@ export async function GET(request) {
  */
 export async function POST(request) {
   try {
-    // Require internal API secret for trade execution to prevent unauthorized token transfers
+    const body = await request.json();
+    const { pair, side, orderType, quantity, price, stopLossPrice, clientWallet, signature } = body;
+
+    // Auth: accept internal API secret (for scheduler) OR wallet signature (for client QuickTrade)
     const apiSecret = request.headers.get('x-internal-api-secret');
     const expectedSecret = process.env.INTERNAL_API_SECRET;
-    if (!expectedSecret) {
-      return NextResponse.json({ success: false, error: 'Server misconfigured: INTERNAL_API_SECRET not set' }, { status: 500 });
-    }
-    if (!apiSecret || apiSecret !== expectedSecret) {
-      return NextResponse.json({ success: false, error: 'Unauthorized: missing or invalid x-internal-api-secret header' }, { status: 401 });
-    }
+    const hasInternalAuth = expectedSecret && apiSecret && apiSecret === expectedSecret;
 
-    const body = await request.json();
-    const { pair, side, orderType, quantity, price, stopLossPrice, clientWallet } = body;
+    if (!hasInternalAuth) {
+      // Fall back to wallet signature verification for client-side trades
+      if (!clientWallet || !signature || signature === '0x') {
+        return NextResponse.json(
+          { success: false, error: 'Unauthorized: provide x-internal-api-secret header or wallet signature' },
+          { status: 401 }
+        );
+      }
+      // Verify EIP-712 signature from client wallet
+      try {
+        const chainId = Number(process.env.CHAIN_ID || '421614');
+        const domain = {
+          name: 'spot',
+          version: '1',
+          chainId,
+          verifyingContract: '0x0000000000000000000000000000000000000000'
+        };
+        const types = {
+          ExchangeAction: [
+            { name: 'payloadHash', type: 'bytes32' },
+            { name: 'nonce', type: 'uint64' }
+          ]
+        };
+        const orderParams = {
+          pair,
+          side,
+          orderType,
+          quantity: String(quantity),
+          price: String(price || '0.0'),
+          stopPrice: stopLossPrice ? String(stopLossPrice) : '0.0'
+        };
+        const payloadJson = JSON.stringify({ type: 'newOrder', params: orderParams });
+        const payloadHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(payloadJson));
+        const nonce = Date.now();
+        const recoveredAddress = ethers.utils.verifyTypedData(domain, types, { payloadHash, nonce }, signature);
+        if (recoveredAddress.toLowerCase() !== clientWallet.toLowerCase()) {
+          return NextResponse.json(
+            { success: false, error: 'Unauthorized: wallet signature does not match clientWallet' },
+            { status: 401 }
+          );
+        }
+      } catch (sigErr) {
+        console.error('[ERROR] Signature verification failed:', sigErr.message);
+        return NextResponse.json(
+          { success: false, error: 'Unauthorized: invalid wallet signature' },
+          { status: 401 }
+        );
+      }
+    }
 
     if (!pair || !side || !orderType || !quantity) {
       return NextResponse.json({ success: false, error: 'Missing required parameters (pair, side, orderType, quantity)' }, { status: 400 });
@@ -377,10 +453,11 @@ export async function POST(request) {
     }
     // Insert trade into database
     await execute(`
-      INSERT INTO trades (id, side, pair, order_type, quantity, fill_price, stop_loss_price, sodex_order_id, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      INSERT INTO trades (id, user_address, side, pair, order_type, quantity, fill_price, stop_loss_price, sodex_order_id, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `, [
       tradeId || '',
+      (activeAddress || '').toLowerCase(),
       side || '',
       pair || '',
       orderType || '',

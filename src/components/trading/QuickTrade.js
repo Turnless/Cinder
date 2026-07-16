@@ -22,7 +22,6 @@ export default function QuickTrade({ onTradeSuccess }) {
   const [step, setStep] = useState('input'); // 'input', 'review', 'signing', 'success', 'error'
   const [localWalletAddress, setLocalWalletAddress] = useState('');
   const [isLocalConnecting, setIsLocalConnecting] = useState(false);
-  const [signatureHex, setSignatureHex] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [executionResult, setExecutionResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -100,7 +99,7 @@ export default function QuickTrade({ onTradeSuccess }) {
     setStep('review');
   };
 
-  const handleExecuteTrade = async (signingScheme) => {
+  const handleExecuteTrade = async () => {
     setStep('signing');
     setLoading(true);
     setErrorMessage('');
@@ -118,78 +117,71 @@ export default function QuickTrade({ onTradeSuccess }) {
           )
         : null;
 
-      let signature = '0x';
-
-      if (signingScheme === 'browser') {
-        if (!activeWalletAddress) {
-          throw new Error('Wallet not connected. Connect web3 wallet first.');
-        }
-
-        const provider = new ethers.providers.Web3Provider(window.ethereum);
-        const signer = provider.getSigner();
-        const network = await provider.getNetwork();
-
-        // On-chain CNDR transfer for BUY orders
-        const tokenAddress = process.env.NEXT_PUBLIC_CNDR_TOKEN_ADDRESS;
-        if (side === 'buy' && tokenAddress && tokenAddress !== '0x...' && tokenAddress !== '') {
-          const cost = parseFloat(quantity) * parseFloat(finalPrice);
-          const tokenAbi = [
-            "function transfer(address to, uint256 amount) returns (bool)",
-            "function balanceOf(address owner) view returns (uint256)"
-          ];
-          const tokenContract = new ethers.Contract(tokenAddress, tokenAbi, signer);
-
-          // Verify user has sufficient CNDR balance
-          const walletBal = await tokenContract.balanceOf(activeWalletAddress);
-          const formattedBal = parseFloat(ethers.utils.formatUnits(walletBal, 18));
-          if (formattedBal < cost) {
-            throw new Error(`Insufficient CNDR balance. Required: ${cost.toFixed(2)} CNDR. Your balance: ${formattedBal.toFixed(2)} CNDR. Please claim CNDR from the faucet above.`);
-          }
-
-          setErrorMessage('Please confirm the CNDR transfer in your wallet...');
-          // Get server master wallet address dynamically
-          const masterRes = await fetch('/api/trade?masterAddress=true');
-          const masterData = await masterRes.json();
-          const masterAddress = masterData.masterAddress || "0xa7c0689b9d40f12098b02512a945e928478dd38e";
-
-          const tx = await tokenContract.transfer(masterAddress, ethers.utils.parseUnits(cost.toFixed(6), 18));
-          setErrorMessage('Waiting for CNDR transfer transaction to be mined...');
-          await tx.wait();
-        }
-
-        const domain = {
-          name: 'spot',
-          version: '1',
-          chainId: network.chainId,
-          verifyingContract: '0x0000000000000000000000000000000000000000'
-        };
-
-        const types = {
-          ExchangeAction: [
-            { name: 'payloadHash', type: 'bytes32' },
-            { name: 'nonce', type: 'uint64' }
-          ]
-        };
-
-        const actionType = 'newOrder';
-        const orderParams = {
-          pair,
-          side,
-          orderType,
-          quantity: String(quantity),
-          price: String(finalPrice),
-          stopPrice: slPrice ? String(slPrice) : '0.0'
-        };
-
-        const payloadJson = JSON.stringify({ type: actionType, params: orderParams });
-        const payloadHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(payloadJson));
-        const nonce = Date.now();
-
-        const message = { payloadHash, nonce };
-
-        signature = await signer._signTypedData(domain, types, message);
-        setSignatureHex(signature);
+      if (!activeWalletAddress) {
+        throw new Error('Wallet not connected. Please connect your wallet first.');
       }
+
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const network = await provider.getNetwork();
+
+      // On-chain CNDR transfer for BUY orders
+      const tokenAddress = process.env.NEXT_PUBLIC_CNDR_TOKEN_ADDRESS;
+      if (side === 'buy' && tokenAddress && tokenAddress !== '0x...' && tokenAddress !== '') {
+        const cost = parseFloat(quantity) * parseFloat(finalPrice);
+        const tokenAbi = [
+          "function transfer(address to, uint256 amount) returns (bool)",
+          "function balanceOf(address owner) view returns (uint256)"
+        ];
+        const tokenContract = new ethers.Contract(tokenAddress, tokenAbi, signer);
+
+        // Verify user has sufficient CNDR balance
+        const walletBal = await tokenContract.balanceOf(activeWalletAddress);
+        const formattedBal = parseFloat(ethers.utils.formatUnits(walletBal, 18));
+        if (formattedBal < cost) {
+          throw new Error(`Insufficient CNDR balance. Required: ${cost.toFixed(2)} CNDR. Your balance: ${formattedBal.toFixed(2)} CNDR. Please claim CNDR from the faucet above.`);
+        }
+
+        setErrorMessage('Please confirm the CNDR transfer in your wallet...');
+        // Get server master wallet address dynamically
+        const masterRes = await fetch('/api/trade?masterAddress=true');
+        const masterData = await masterRes.json();
+        const masterAddress = masterData.masterAddress || "0xa7c0689b9d40f12098b02512a945e928478dd38e";
+
+        const tx = await tokenContract.transfer(masterAddress, ethers.utils.parseUnits(cost.toFixed(6), 18));
+        setErrorMessage('Waiting for CNDR transfer transaction to be mined...');
+        await tx.wait();
+      }
+
+      const domain = {
+        name: 'spot',
+        version: '1',
+        chainId: network.chainId,
+        verifyingContract: '0x0000000000000000000000000000000000000000'
+      };
+
+      const types = {
+        ExchangeAction: [
+          { name: 'payloadHash', type: 'bytes32' },
+          { name: 'nonce', type: 'uint64' }
+        ]
+      };
+
+      const orderParams = {
+        pair,
+        side,
+        orderType,
+        quantity: String(quantity),
+        price: String(finalPrice),
+        stopPrice: slPrice ? String(slPrice) : '0.0'
+      };
+
+      const payloadJson = JSON.stringify({ type: 'newOrder', params: orderParams });
+      const payloadHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(payloadJson));
+      const nonce = Date.now();
+
+      const message = { payloadHash, nonce };
+      const signature = await signer._signTypedData(domain, types, message);
 
       const response = await fetch('/api/trade', {
         method: 'POST',
@@ -203,7 +195,8 @@ export default function QuickTrade({ onTradeSuccess }) {
           quantity,
           price: finalPrice,
           stopLossPrice: slPrice,
-          clientWallet: activeWalletAddress || null
+          clientWallet: activeWalletAddress,
+          signature
         }),
       });
 
@@ -496,7 +489,7 @@ export default function QuickTrade({ onTradeSuccess }) {
               {activeWalletAddress ? (
                 <button
                   type="button"
-                  onClick={() => handleExecuteTrade('browser')}
+                  onClick={() => handleExecuteTrade()}
                   className="btn-hero-primary"
                   style={{ width: '100%', backgroundColor: 'var(--color-pulse-green)', borderColor: 'var(--color-pulse-green)', color: 'var(--color-obsidian)' }}
                 >
@@ -504,18 +497,9 @@ export default function QuickTrade({ onTradeSuccess }) {
                 </button>
               ) : (
                 <div style={{ textAlign: 'center', padding: '12px', backgroundColor: 'rgba(245, 158, 11, 0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(245, 158, 11, 0.25)', fontSize: '0.72rem', color: 'var(--color-alert-amber)', marginBottom: '4px' }}>
-                  Connect your Web3 Wallet to authorize trades locally, or execute automatically using the server:
+                  Connect your Web3 Wallet to authorize trades
                 </div>
               )}
-              
-              <button
-                type="button"
-                onClick={() => handleExecuteTrade('server')}
-                className="btn-hero-secondary"
-                style={{ width: '100%' }}
-              >
-                Execute Automatically via Server
-              </button>
 
               <button
                 type="button"

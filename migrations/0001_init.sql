@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS trades (
     id              TEXT PRIMARY KEY,         -- UUID
     shift_id        TEXT REFERENCES narrative_shifts(id),
     story_id        TEXT REFERENCES stories(id),
+    user_address    TEXT,                     -- Wallet address of the user who initiated the trade
     side            TEXT NOT NULL,            -- 'buy' or 'sell'
     pair            TEXT NOT NULL,            -- e.g., 'BTC-USDC'
     order_type      TEXT NOT NULL,            -- 'market' or 'limit'

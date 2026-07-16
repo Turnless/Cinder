@@ -420,9 +420,9 @@ export async function checkMarketAndTrade() {
         args: [storyId, 'breaking', title, storyBody, `Market narrative has shifted from ${fromName} to ${toName}.`, JSON.stringify(temps), now]
       },
       {
-        sql: `INSERT INTO trades (id, shift_id, story_id, side, pair, order_type, quantity, fill_price, stop_loss_price, sodex_order_id, status, created_at, filled_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [tradeId, shiftId, storyId, 'buy', `${targetToken}-USDC`, 'market', targetQty, fillPrice.toString(), stopLossPrice, orderResult.orderId, 'filled', now, now]
+        sql: `INSERT INTO trades (id, shift_id, story_id, user_address, side, pair, order_type, quantity, fill_price, stop_loss_price, sodex_order_id, status, created_at, filled_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [tradeId, shiftId, storyId, userAddress.toLowerCase(), 'buy', `${targetToken}-USDC`, 'market', targetQty, fillPrice.toString(), stopLossPrice, orderResult.orderId, 'filled', now, now]
       },
       {
         sql: `INSERT INTO narrative_shifts (id, from_narrative, to_narrative, confidence, signals, story_id, trade_id, detected_at)
