@@ -496,7 +496,7 @@ export async function refineAllNews(newsItems) {
   
   const refinedMap = {};
   for (const item of refinedResults) {
-    refinedMap[item.id] = item;
+    refinedMap[String(item.id)] = item;
   }
   
   return newsItems.map(item => {

@@ -83,7 +83,7 @@ export async function GET(request) {
           // Merge refined back into full list
           const refinedMap = {};
           for (const item of refined) {
-            refinedMap[item.id] = item;
+            refinedMap[String(item.id)] = item;
           }
           const allNews = freshNews.map(item => refinedMap[item.id] || item);
 
