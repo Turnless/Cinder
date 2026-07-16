@@ -65,13 +65,13 @@ export async function GET(request) {
     const type = searchParams.get('type');
     const refresh = searchParams.get('refresh') === 'true';
 
-    // Manual refresh: fetch fresh news, refine last 10 via MiMo, cache all
+    // Manual refresh: fetch fresh news, refine via MiMo, cache all
     if (refresh) {
       try {
         console.log('[STORIES API] Manual news refresh triggered...');
         const freshNews = await getAINewsFeed(50);
         if (freshNews && freshNews.length > 0) {
-          // Refine only the latest 10 via MiMo AI
+          // Refine the latest 10 via MiMo AI (titles + sentiment)
           const toRefine = freshNews.slice(0, 10);
           let refined = toRefine;
           try {
@@ -108,6 +108,37 @@ export async function GET(request) {
             );
           }
           console.log(`[STORIES API] Refreshed ${freshNews.length} news, refined top 10 via MiMo`);
+        }
+
+        // Backfill: refine old items missing sentiment (batch of 10 at a time, max 3 batches)
+        const unrefined = await query(
+          `SELECT id, title, summary, source, keywords, fetched_at FROM news_items
+           WHERE sentiment IS NULL AND fetched_at >= datetime('now', '-30 days')
+           ORDER BY fetched_at DESC LIMIT 30`
+        );
+        if (unrefined.length > 0) {
+          console.log(`[STORIES API] Backfilling sentiment for ${unrefined.length} unrefined items...`);
+          for (let i = 0; i < unrefined.length; i += 10) {
+            const batch = unrefined.slice(i, i + 10);
+            try {
+              const refinedBatch = await refineAllNews(batch);
+              for (const item of refinedBatch) {
+                await execute(
+                  `INSERT INTO news_items (id, title, summary, source, keywords, sentiment, fetched_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     title = excluded.title, summary = excluded.summary,
+                     sentiment = excluded.sentiment, keywords = excluded.keywords`,
+                  [item.id, item.title, item.summary || null, item.source || null,
+                   JSON.stringify(item.keywords || []), item.sentiment, item.fetched_at]
+                );
+              }
+              console.log(`[STORIES API] Backfilled batch ${Math.floor(i/10)+1} (${batch.length} items)`);
+            } catch (batchErr) {
+              console.error(`[STORIES API] Backfill batch ${Math.floor(i/10)+1} failed:`, batchErr.message);
+              break;
+            }
+          }
         }
       } catch (refreshErr) {
         console.error('[STORIES API] Error during manual refresh:', refreshErr);
