@@ -3,7 +3,8 @@
   <p align="center"><strong>The AI Newsroom That Trades Its Own Stories</strong></p>
   <p align="center">
     An autonomous financial wire service that publishes AI-written market intelligence<br/>
-    from SoSoValue data, detects narrative regime shifts, and auto-executes trades on SoDEX.
+    from SoSoValue data, detects narrative regime shifts, and auto-executes trades on SoDEX.<br/>
+    Built in 96hrs for <a href="https://x.com/SoSoValueCrypto/status/2085969681979162954?s=20">SosoValue Hackathon</a> in last wave, Ranked 24th overall.
   </p>
 </p>
 
