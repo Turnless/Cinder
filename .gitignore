@@ -50,3 +50,8 @@ pip-delete-this-directory.txt
 .ipynb_checkpoints
 
 .vercel
+
+# Hardhat (contracts/)
+contracts/artifacts/
+contracts/cache/
+contracts/coverage/
