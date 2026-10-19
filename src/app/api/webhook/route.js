@@ -3,6 +3,7 @@ import { verifyTelegramSignature, sendMessage } from '../../../lib/telegram';
 import { query, execute } from '../../../lib/db';
 import { getAccountState } from '../../../lib/sodex';
 import { rateLimit } from '../../../lib/rate-limiter';
+import { setTradingPaused, isTradingPausedInDb } from '../../../lib/trading-pause';
 
 export const dynamic = 'force-dynamic';
 
@@ -143,7 +144,14 @@ export async function POST(request) {
             break;
           }
           global.tradingPaused = true;
-          await sendMessage(chatId, '[ALERT] <b>Cinder Trading Kill-Switch Triggered</b>\nAutomated execution is now <b>PAUSED</b>.');
+          try {
+            // Persisted so the worker process (which does the trading) sees it too
+            await setTradingPaused(true);
+            await sendMessage(chatId, '[ALERT] <b>Cinder Trading Kill-Switch Triggered</b>\nAutomated execution is now <b>PAUSED</b>.');
+          } catch (e) {
+            console.error('[ERROR] Failed to persist trading pause:', e);
+            await sendMessage(chatId, '[ERROR] <b>Pause NOT saved</b>\nThe database could not be updated, so the worker may keep trading. Set AUTO_TRADE_ENABLED=false or use the Edge Config kill switch.');
+          }
           break;
         }
         case '/resume': {
@@ -152,11 +160,17 @@ export async function POST(request) {
             break;
           }
           global.tradingPaused = false;
-          await sendMessage(chatId, '[START] <b>Cinder Trading Resumed</b>\nAutomated execution is now <b>ACTIVE</b>.');
+          try {
+            await setTradingPaused(false);
+            await sendMessage(chatId, '[START] <b>Cinder Trading Resumed</b>\nAutomated execution is now <b>ACTIVE</b>.');
+          } catch (e) {
+            console.error('[ERROR] Failed to persist trading resume:', e);
+            await sendMessage(chatId, '[ERROR] <b>Resume NOT saved</b>\nThe database could not be updated; the worker stays paused.');
+          }
           break;
         }
         case '/status': {
-          const isPaused = global.tradingPaused === true;
+          const isPaused = global.tradingPaused === true || await isTradingPausedInDb();
           const autoTradeEnabled = process.env.AUTO_TRADE_ENABLED === 'true';
           const activePositionsCount = 0; // fallback or query DB
           let balance = '10000.00';

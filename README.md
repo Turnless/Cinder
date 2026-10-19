@@ -49,7 +49,7 @@ Crypto traders face three compounding problems:
 - **Breaking Alerts** — published immediately when a narrative regime shift is detected
 - All stories auto-generated from live SoSoValue API data — zero human writers
 - Embedded interactive charts (ETF flow trends, sector heatmaps, narrative timelines)
-- RSS feed + Telegram channel for subscribers
+- Telegram alerts for subscribers
 
 ### 🧠 Narrative Intelligence Engine
 - Real-time **Narrative Temperature** tracking (0–100°) for 8+ recurring crypto narrative archetypes
@@ -78,7 +78,7 @@ Crypto traders face three compounding problems:
 - Detects injected browser wallets (MetaMask, Rabby, Coinbase Wallet, etc.) conforming to **EIP-1193**
 - Performs standard Web3 handshakes (`eth_requestAccounts`) and tracks native gas balances (`eth_getBalance`)
 - Observes live session changes (`accountsChanged`, `chainChanged`) to handle hot account swaps dynamically
-- Built-in testnet CNDR faucet persisting token balances per address in localStorage
+- Built-in on-chain CNDR faucet on Arbitrum Sepolia (10,000 CNDR per wallet per day); a browser-only demo balance is used when no token is configured
 
 ### 🔒 Navigation Gating & Session Redirects
 - Restricts dApp routes `/dashboard` and `/portfolio` to connected wallet sessions only
@@ -88,7 +88,7 @@ Crypto traders face three compounding problems:
 ### 🔔 Alert System
 - Telegram bot for real-time narrative shift alerts and trade notifications
 - Configurable alert thresholds (notify at 60°, trade at 80°)
-- Daily digest emails with performance summary
+- Daily Telegram digest with performance summary
 
 ---
 
@@ -125,13 +125,14 @@ Crypto traders face three compounding problems:
 | Web3 Wallet | EIP-1193 / window.ethereum RPC | Connection to real wallets (MetaMask, Rabby) and fetching native balances |
 | Charts | Recharts + D3.js | Recharts for story charts, D3 for narrative bubble map |
 | Animation | Framer Motion | Smooth narrative transitions and live updates |
-| AI/LLM | OpenAI GPT-4o | Story generation + narrative classification |
-| Database | SQLite (via better-sqlite3) | Note that production runs on Turso(libSQL); Zero-config, perfect for hackathon; stores stories, narrative history, trades |
+| AI/LLM | OpenAI-compatible API (default model `mimo-v2.5`) | Story generation, news classification and refinement |
+| Database | Turso (libSQL) via `@libsql/client` | Hosted SQLite in production, local `local.db` file in development; stores stories, narrative history, trades |
 | Real-time | Server-Sent Events (SSE) | Live story updates on the news feed |
-| Testing | Vitest | Fast unit testing scaffolding with database and OpenAI mocks |
+| Testing | Vitest + Hardhat | App tests with database, LLM and chain mocks; contract tests on a local Hardhat chain |
 | Trading | SoDEX REST API | Order placement, cancellation, account management |
 | Data | SoSoValue REST API | ETF flows, AI news feed, sector/index data |
 | Alerts | Telegram Bot API | Narrative shift + trade notifications |
+| Token | Solidity + Hardhat | CNDR testnet settlement token with daily faucet (`contracts/`) |
 
 ---
 
@@ -166,123 +167,95 @@ Cinder uses **four** SoDEX API capabilities:
 
 ### Prerequisites
 
-- **Node.js** ≥ 18.0
-- **Python** ≥ 3.10 (for the AI narrative engine)
-- **SoSoValue API Key** — [Register here](https://sosovalue.com) then apply via [Buildathon form](https://forms.gle/2nuJT2qNbUQsyyZy8)
-- **SoDEX Account + API Key** — [Register here](https://sodex.com) (testnet available without rank requirement)
-- **OpenAI API Key** — For story generation and narrative classification
+- **Node.js** ≥ 18 (CI uses Node 20)
+- **SoSoValue API Key**: [register here](https://sosovalue.com), then apply via the [Buildathon form](https://forms.gle/2nuJT2qNbUQsyyZy8)
+- **An OpenAI-compatible LLM endpoint and key**: OpenAI or any provider exposing the same API (default model: `mimo-v2.5`)
+- **SoDEX account + API key** (optional): [register here](https://sodex.com); testnet is available without a rank requirement. Without it, Cinder runs in demo mode with simulated fills.
+- **Turso database** for production. Local development falls back to a `local.db` SQLite file.
 
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/YOUR_USERNAME/cinder.git
+git clone https://github.com/Turnless/Cinder.git
 cd Cinder
-
-# Install frontend dependencies
 npm install
-
-# Install Python dependencies (narrative engine)
-pip install -r requirements.txt
-
-# Set up environment variables
-cp .env.example .env
-# Edit .env with your API keys (see below)
+cp .env.example .env   # then fill in your keys
 ```
 
 ### Environment Variables
 
-```env
-# SoSoValue API
-SOSOVALUE_API_KEY=your_sosovalue_api_key
+`.env.example` lists every variable with comments. The main ones:
 
-# Turso Database
-TURSO_DATABASE_URL=libsql://your-db.turso.io
-TURSO_AUTH_TOKEN=your_turso_auth_token
-
-# SoDEX API
-SODEX_API_KEY_NAME=your_api_key_name
-SODEX_API_KEY_PRIVATE_KEY=your_api_key_private_key
-SODEX_MASTER_PRIVATE_KEY=your_master_private_key
-SODEX_API_BASE_URL=https://testnet-gw.sodex.dev/api/v1/spot
-USER_WALLET_ADDRESS=0x...
-
-# OpenAI
-OPENAI_API_KEY=your_openai_api_key
-
-# Telegram Bot (optional)
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-
-# Trading & Risk
-NARRATIVE_TRADE_THRESHOLD=80
-MAX_ALLOCATION_PER_TRADE=0.30
-STOP_LOSS_PERCENTAGE=0.08
-COOLDOWN_HOURS=48
-AUTO_TRADE_ENABLED=false
-QTY_DECIMALS=4
-
-# Security
-INTERNAL_API_SECRET=your_secret_here   # Required for POST /api/trade and /api/stories
-
-# Pruning
-NEWS_TTL_HOURS=48
-ETF_FLOWS_TTL_HOURS=24
-
-# Kill-switch behavior
-KILL_SWITCH_FAIL_CLOSED=true           # Default to paused on Edge Config error
-```
+| Variable | Needed for | Purpose |
+|---|---|---|
+| `SOSOVALUE_API_KEY` | Always | ETF flows, AI news feed, sector data |
+| `OPENAI_API_KEY` | Always | Story generation, news classification and refinement |
+| `OPENAI_BASE_URL`, `OPENAI_MODEL` | Optional | Use any OpenAI-compatible provider and model (defaults: OpenAI URL, `mimo-v2.5`) |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | Production | libSQL database; the app refuses to start in production without it |
+| `INTERNAL_API_SECRET` | Always | Protects `POST /api/stories`, `POST /api/narrative` and trusted calls to `POST /api/trade` |
+| `SODEX_API_KEY_NAME`, `SODEX_API_KEY_PRIVATE_KEY`, `USER_WALLET_ADDRESS`, `SODEX_API_BASE_URL` | Live trading | Signed SoDEX orders. Without them, trades are simulated. |
+| `SODEX_MASTER_PRIVATE_KEY` | Setup only | Registering the SoDEX API key (`scripts/register-sodex-api-key.js`) |
+| `NEXT_PUBLIC_CNDR_TOKEN_ADDRESS` | CNDR settlement | CNDR token on Arbitrum Sepolia. Without it, balances are browser-only demo balances. |
+| `TREASURY_PRIVATE_KEY` | Recommended | Wallet that receives CNDR for buys and pays CNDR out for sells (falls back to `USER_WALLET_ADDRESS` and the SoDEX key) |
+| `ARBITRUM_SEPOLIA_RPC_URL` (or `RPC_URL`) | Optional | Server-side RPC; defaults to the public Arbitrum Sepolia RPC |
+| `CHAIN_ID` | Optional | Chain used to verify wallet-signed orders (default `421614`) |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_BOT_USERNAME` | Telegram alerts | Bot alerts; `TELEGRAM_CHAT_ID` is the admin chat |
+| `TELEGRAM_WEBHOOK_SECRET` | Telegram alerts | Webhook authentication; must match the value used with `scripts/set-telegram-webhook.js` |
+| `AUTO_TRADE_ENABLED`, `MAX_ALLOCATION_PER_TRADE`, `STOP_LOSS_PERCENTAGE`, `COOLDOWN_HOURS`, `QTY_DECIMALS` | Optional | Risk settings. Auto-trading is off unless `AUTO_TRADE_ENABLED=true`. |
+| `EDGE_CONFIG`, `KILL_SWITCH_FAIL_CLOSED` | Optional | Vercel Edge Config kill switch (`trading_paused`); pauses trading if Edge Config can't be read |
+| `NEWS_TTL_HOURS`, `ETF_FLOWS_TTL_HOURS` | Optional | Data retention for cached news and ETF flows |
 
 ### Running Locally
 
 ```bash
-# Start the development server (frontend + API routes)
 npm run dev
-
-# In a separate terminal, start the narrative engine
-python engine/main.py
-
-# The app will be available at http://localhost:3000
 ```
 
-### Running on Testnet
+The app runs at http://localhost:3000. In development, the first request to `/api/stories` also starts the background scheduler in the same process: the hourly news and narrative cycle (including shift detection and trading), Market Pulse every 4 hours, the daily Deep Dive, stop-loss checks every 5 minutes and nightly data pruning.
 
-Cinder ships pre-configured for **SoDEX Testnet**. No real funds required for demo.
+To run the scheduler on its own (Node 22+):
 
 ```bash
-# Ensure .env uses testnet URLs
-SODEX_API_BASE_URL=https://testnet-gw.sodex.dev/api/v1/spot
-
-# Start with auto-trading enabled (safe on testnet)
-AUTO_TRADE_ENABLED=true npm run dev
+npm run worker
 ```
 
-### ⛽ EIP-4337 Paymaster & On-Chain Token Deploy Setup
+> **Production note:** Vercel doesn't keep a process running, so the scheduler doesn't run there. The live site serves stories already in the database and refreshes the news feed when people visit (at most every 5 minutes). Autonomous publishing and trading need the worker running on an always-on host: see **[docs/WORKER.md](docs/WORKER.md)** for setup, safe start-up and pausing.
 
-To deploy the CNDR token to a live testnet (such as Sepolia or Base Sepolia) and enable users to pay for execution gas fees in CNDR, you must provide:
+### Testnet & Live Trading
 
-1. **JSON-RPC Node URL**: An HTTP endpoint for your target testnet (e.g. from Infura, Alchemy, or QuickNode) configured in `.env`.
-2. **Deployer Private Key**: An EVM private key holding a small amount of native gas tokens (e.g., Sepolia ETH) to sign and fund the contract deployment.
-3. **Paymaster Sponsor Configuration**:
-   - Integrate an Account Abstraction SDK (like **Biconomy**, **ZeroDev**, or **Pimlico**).
-   - Configure a Token Paymaster contract pre-funded with native ETH. The Paymaster deducts CNDR from the user's smart wallet and pays the native gas ETH to the network bundlers.
-   - Set up the Paymaster API keys in the Next.js API router.
+Cinder targets **SoDEX testnet** (`SODEX_API_BASE_URL=https://testnet-gw.sodex.dev/api/v1/spot`). Auto-trading stays off unless `AUTO_TRADE_ENABLED=true`, and every automated trade still has to pass the risk gates: cooldown, max open positions, daily loss limit, kill switch, and a guard that blocks mainnet URLs outside production.
 
-To deploy the CNDR ERC-20 contract using Hardhat, run:
+### CNDR Token (`contracts/`)
+
+CNDR is a testnet ERC-20 on **Arbitrum Sepolia** at `0x6C64923FD6478D265A1b5a971c6bC59cB35A5FA7`. Each wallet can claim **10,000 CNDR per day** from its faucet (a normal transaction, so it needs a little Arbitrum Sepolia ETH). QuickTrade buys are paid in CNDR to the treasury, and sells are paid out from it.
+
+The contract has its own Hardhat project, separate from the app's dependencies:
+
 ```bash
-npx hardhat run scripts/deploy.js --network sepolia
+cd contracts
+npm install
+npm test
 ```
 
-### 🧪 Running Unit Tests & CI
+Deploying a **new** copy resets every balance, so only do it deliberately:
 
-Cinder includes a comprehensive unit testing suite using **Vitest** to verify the core trading logic, EIP-712 order validation parameters, and narrative shift detections. All database calls and OpenAI API completions are mocked.
-
-To run the test suite locally:
 ```bash
-npm run test
+cd contracts
+npx hardhat vars set DEPLOYER_PRIVATE_KEY
+npm run deploy:arbitrum-sepolia
 ```
 
-A GitHub Actions workflow is configured under `.github/workflows/ci.yml` that automatically validates the codebase (lint + test execution) on every Pull Request.
+Then set `NEXT_PUBLIC_CNDR_TOKEN_ADDRESS` to the new address and redeploy the app.
+
+### 🧪 Tests & CI
+
+```bash
+npm test                    # app tests (Vitest); database, LLM, SoDEX and chain calls are mocked
+npm run lint
+cd contracts && npm test    # contract tests (Hardhat)
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs lint, the app tests, a production build and the contract tests on every pull request to `main`.
 
 ---
 
@@ -291,101 +264,82 @@ A GitHub Actions workflow is configured under `.github/workflows/ci.yml` that au
 ```
 cinder/
 ├── README.md
+├── .env.example
+├── .github/workflows/ci.yml          # Lint, tests, build, contract tests
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── API_INTEGRATION.md
-│   ├── PRE_MAINNET_CHECKLIST.md
-│   ├── INCIDENT_RUNBOOK.md
-│   ├── RUNBOOK.md
-│   └── README.md
-├── contracts/
-│   └── CinderToken.sol
+│   └── WORKER.md                     # Running the scheduler on an always-on host
+├── contracts/                        # Hardhat project (own package.json)
+│   ├── src/CinderToken.sol           # CNDR testnet token + faucet
+│   ├── test/CinderToken.js
+│   ├── scripts/deploy.js
+│   └── hardhat.config.js
 ├── migrations/
-│   └── 0001_init.sql
+│   ├── 0001_init.sql
+│   ├── 0002_add_user_address.sql
+│   ├── 0003_trade_replay_protection.sql
+│   └── 0004_app_settings.sql         # Shared trading_paused flag
 ├── scripts/
+│   ├── worker.js                     # Scheduler for an always-on host (npm run worker)
 │   ├── db-init.js
+│   ├── register-sodex-api-key.js
+│   ├── set-telegram-webhook.js
 │   ├── seed-more-stories.js
-│   ├── test-circuit-breaker.mjs
-│   └── test-trade-engine.mjs
-├── src/
-│   ├── app/
-│   │   ├── layout.js
-│   │   ├── page.js
-│   │   ├── feed/
-│   │   │   └── page.js
-│   │   ├── story/[id]/page.js
-│   │   ├── dashboard/page.js
-│   │   ├── portfolio/page.js
-│   │   └── api/
-│   │       ├── stories/route.js     # POST requires x-internal-api-secret
-│   │       ├── narrative/route.js
-│   │       ├── trade/route.js       # POST requires x-internal-api-secret
-│   │       └── webhook/route.js     # Fail-closed signature check
-│   ├── components/
-│   │   ├── wire/
-│   │   │   ├── StoryCard.js         # XSS-escaped markdown
-│   │   │   ├── StoryFeed.js
-│   │   │   ├── FlowChart.js
-│   │   │   └── SectorHeatmap.js
-│   │   ├── narrative/
-│   │   │   ├── BubbleMap.js
-│   │   │   ├── Timeline.js
-│   │   │   ├── TemperatureGauge.js
-│   │   │   └── ShiftAlert.js
-│   │   ├── trading/
-│   │   │   ├── PortfolioView.js
-│   │   │   ├── TradeHistory.js
-│   │   │   ├── RiskDashboard.js
-│   │   │   └── QuickTrade.js
-│   │   └── shared/
-│   │       ├── Header.js
-│   │       ├── Footer.js
-│   │       ├── LiveIndicator.js
-│   │       └── ThemeProvider.js
-│   ├── context/
-│   │   └── WalletContext.js
-│   ├── lib/
-│   │   ├── sosovalue.js
-│   │   ├── sodex.js                 # Monotonic nonce counter
-│   │   ├── openai.js                # Timeout + error flag on classification
-│   │   ├── db.js                    # Production guard for TURSO_DATABASE_URL
-│   │   ├── validator.js             # try/catch on DB queries
-│   │   ├── rate-limiter.js
-│   │   ├── scheduler.js             # Configurable pruning TTLs
-│   │   └── telegram.js
-│   ├── engine/
-│   │   ├── __tests__/
-│   │   │   ├── narrative.test.js
-│   │   │   ├── shift-detector.test.js
-│   │   │   ├── trade-engine.test.js
-│   │   │   └── trade-engine-fidelity.test.js
-│   │   ├── narrative.js
-│   │   ├── shift-detector.js
-│   │   └── trade-engine.js          # Kill-switch in stop-loss, batch inserts
-│   └── styles/
-│       ├── globals.css
-│       ├── wire.css
-│       ├── dashboard.css
-│       └── portfolio.css
-├── engine/
-│   ├── main.py
-│   ├── narrative_classifier.py
-│   ├── shift_detector.py
-│   └── requirements.txt
-├── .env.example
-├── package.json
-└── next.config.js
+│   └── test-*.js / test-*.mjs        # Manual end-to-end checks
+└── src/
+    ├── app/
+    │   ├── page.js, layout.js
+    │   ├── feed/, story/[id]/, dashboard/, portfolio/
+    │   └── api/
+    │       ├── stories/              # GET feed (+ throttled refresh), POST requires internal secret
+    │       ├── stories/stream/       # Server-Sent Events
+    │       ├── narrative/            # GET temperatures, POST requires internal secret
+    │       ├── trade/                # GET portfolio/prices, POST wallet-signed or internal trades
+    │       ├── telegram-auth/        # Wallet-signed Telegram linking
+    │       ├── webhook/              # Telegram webhook (secret required)
+    │       └── market-update/
+    ├── components/
+    │   ├── wire/                     # StoryCard (escaped markdown), StoryFeed, charts
+    │   ├── narrative/                # BubbleMap, Timeline, TemperatureGauge, ShiftAlert
+    │   ├── trading/                  # PortfolioView, QuickTrade, TradeHistory, RiskDashboard
+    │   └── shared/
+    ├── context/WalletContext.js      # Wallet connection, network switching, faucet
+    ├── engine/
+    │   ├── narrative.js              # Narrative temperatures
+    │   ├── shift-detector.js         # Regime shift detection
+    │   └── trade-engine.js           # Risk gates, sizing, execution, stop-losses
+    ├── lib/
+    │   ├── sosovalue.js, sodex.js, openai.js, telegram.js
+    │   ├── cndr.js                   # Treasury, CNDR payment verification, payouts
+    │   ├── secrets.js                # Constant-time secret checks
+    │   ├── validator.js              # Fact-checks AI stories against the database
+    │   ├── db.js, scheduler.js, rate-limiter.js, telegram-link.js
+    └── styles/
 ```
 
 ### Security Hardening
 
-This section documents the security fixes applied during the comprehensive code review.
+Fixes applied during the post-hackathon review.
 
-#### Internal API Auth (CRITICAL)
-POST requests to `/api/trade` and `/api/stories` require an `x-internal-api-secret` header matching the `INTERNAL_API_SECRET` env var. Without this header, POST requests are rejected with 401.
+#### Trusted vs. wallet-signed requests
+`POST /api/stories` and `POST /api/narrative` require an `x-internal-api-secret` header matching `INTERNAL_API_SECRET`. `POST /api/trade` accepts either that header (trusted callers) or an EIP-712 order signature from the trading wallet. Secrets are compared in constant time.
+
+#### Wallet-signed trades
+- **Replay protection:** the nonce is the signing time; orders signed more than 5 minutes ago, or submitted twice, are rejected.
+- **Server-side pricing:** fills and payouts use the server's SoDEX price, never the price in the request. Live mode refuses to trade on fallback prices.
+- **Sells:** the wallet must hold the position it's selling.
+- **Buys:** when CNDR is deployed, the on-chain CNDR payment to the treasury is verified, and each payment can only be used once.
+- **No fake fills:** if a live SoDEX order fails, the trade is recorded and shown as *simulated*, not filled.
+
+#### Telegram
+Linking Telegram requires a wallet signature, link tokens expire after 15 minutes, and the webhook only accepts requests carrying `TELEGRAM_WEBHOOK_SECRET`.
+
+#### Pausing
+The admin's Telegram `/pause` is stored in the database (`app_settings.trading_paused`), so it stops both autonomous trades and stop-loss sells in the worker process, not just in the server that received the message.
 
 #### Kill-Switch Fail-Closed
-If the Edge Config lookup fails (network error, timeout, misconfigured client), the kill-switch **fails closed** (trades paused). Set `KILL_SWITCH_FAIL_CLOSED=false` to revert to failing open.
+If the Edge Config lookup fails (network error, timeout, misconfigured client), the kill-switch **fails closed** (trades paused). Set `KILL_SWITCH_FAIL_CLOSED=false` to revert to failing open. Stop-loss monitoring also respects the kill switch.
 
 #### Nonce Generation
 The SoDEX order nonce is a monotonic counter (not `Date.now()`), preventing nonce reuse under concurrent requests that could cause duplicate fills.
@@ -396,14 +350,11 @@ When `TURSO_DATABASE_URL` is unset in a production environment, the app fails im
 #### XSS Protection
 Story card markdown output is escaped via `escapeHtml()` before rendering, preventing injection via crafted story text.
 
-#### Stop-Loss Kill-Switch Check
-`executeStopLossMonitoring()` now checks the kill-switch before processing stop-loss orders. When paused, stop-losses are skipped to prevent unexpected position closures during manual intervention.
+#### Risk gates
+The daily-loss circuit breaker also trips when `portfolioValue <= 0`; the cooldown checks the most recent buy; the open-position limit counts only positions that are still open.
 
-#### Daily-Loss Circuit Breaker
-Trips when `portfolioValue <= 0` (not just net PnL comparison), catching cases where the wallet is effectively drained.
-
-#### Cooldown Gate
-Now checks the most recent `filled` buy trade, not any trade type, preventing irrelevant sell/stop records from resetting the cooldown timer.
+#### Cost control
+Every feed visit asks for a news refresh; the SoSoValue fetch and AI refinement run at most once every 5 minutes per server instance.
 
 ---
 

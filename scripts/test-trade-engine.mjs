@@ -1,5 +1,5 @@
 /**
- * Verification test for AlphaWire Trade Engine Risk Gates and Sizing.
+ * Verification test for Cinder Trade Engine Risk Gates and Sizing.
  * Simulates risk gate checks and position sizing rules.
  */
 

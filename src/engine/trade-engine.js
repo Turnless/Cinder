@@ -11,6 +11,7 @@ import { placeOrder, getTicker, fetchAccountBalances, getAccountState } from '..
 import { createBreakingStory } from '../lib/openai.js';
 import { validateStory, getTemplateStory } from '../lib/validator.js';
 import { sendMessage, sendNarrativeAlert, sendDailyDigest } from '../lib/telegram.js';
+import { isTradingPausedInDb } from '../lib/trading-pause.js';
 
 /**
  * Helper to parse datetime strings from SQLite correctly as UTC.
@@ -31,6 +32,10 @@ export function parseSqliteDatetime(str) {
  */
 async function isKillSwitchActive() {
   if (global.tradingPaused === true) {
+    return true;
+  }
+  // Telegram /pause is stored in the database so it reaches the worker process too
+  if (await isTradingPausedInDb()) {
     return true;
   }
   const edgeConfigUrl = process.env.EDGE_CONFIG_URL || process.env.EDGE_CONFIG;

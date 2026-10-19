@@ -47,12 +47,18 @@ vi.mock('../../lib/telegram.js', () => ({
   sendDailyDigest: vi.fn().mockResolvedValue(true)
 }));
 
+// 7. Mock the database-backed /pause flag (its own query would otherwise consume the queued db mocks)
+vi.mock('../../lib/trading-pause.js', () => ({
+  isTradingPausedInDb: vi.fn().mockResolvedValue(false)
+}));
+
 // Import modules under test and their mocks
 import { query, execute, batch } from '../../lib/db.js';
 import { placeOrder, getTicker, fetchAccountBalances, getAccountState } from '../../lib/sodex.js';
 import { detectShift } from '../shift-detector.js';
 import { createBreakingStory } from '../../lib/openai.js';
 import { updateNarrativeTemperatures } from '../narrative.js';
+import { isTradingPausedInDb } from '../../lib/trading-pause.js';
 import {
   runPreTradeChecks,
   calculatePositionSize,
@@ -289,6 +295,13 @@ describe('Cinder Trade Execution Engine', () => {
 
     // Gate 5: Edge Config/Global Kill-switch
     describe('Gate 5: Paused State / Kill Switch', () => {
+      it('fails with KILL_SWITCH_ACTIVE if /pause was stored in the database (e.g. sent to the website, worker trading)', async () => {
+        isTradingPausedInDb.mockResolvedValueOnce(true);
+        const result = await runPreTradeChecks(defaultShift, defaultAccountState);
+        expect(result.passed).toBe(false);
+        expect(result.failedGates).toContain('KILL_SWITCH_ACTIVE');
+      });
+
       it('fails with KILL_SWITCH_ACTIVE if global.tradingPaused is true', async () => {
         global.tradingPaused = true;
         const result = await runPreTradeChecks(defaultShift, defaultAccountState);
@@ -376,6 +389,14 @@ describe('Cinder Trade Execution Engine', () => {
   });
 
   describe('executeStopLossMonitoring', () => {
+    it('skips stop-losses while trading is paused via the database flag', async () => {
+      isTradingPausedInDb.mockResolvedValueOnce(true);
+
+      await executeStopLossMonitoring();
+      expect(query).not.toHaveBeenCalled(); // never even loads open trades
+      expect(placeOrder).not.toHaveBeenCalled();
+    });
+
     it('does nothing if there are no open trades in the database', async () => {
       query.mockResolvedValueOnce([]); // no open trades
       await executeStopLossMonitoring();
