@@ -6,7 +6,7 @@ import { useWallet } from '../../context/WalletContext';
 
 export default function PortfolioView({ balance = '0.00', positions = [], onTradeSuccess }) {
   const [isLiquidating, setIsLiquidating] = useState(null);
-  const { walletAddress: globalWalletAddress, connectWallet: globalConnect } = useWallet();
+  const { walletAddress: globalWalletAddress, connectWallet: globalConnect, ensureCorrectNetwork } = useWallet();
   const [localWalletAddress, setLocalWalletAddress] = useState('');
   const activeWalletAddress = globalWalletAddress || localWalletAddress;
 
@@ -44,6 +44,11 @@ export default function PortfolioView({ balance = '0.00', positions = [], onTrad
 
     setIsLiquidating(pos.asset);
     try {
+      // The server verifies signatures against Arbitrum Sepolia; switch before creating the provider
+      if (ensureCorrectNetwork && !(await ensureCorrectNetwork())) {
+        throw new Error('Please switch your wallet to Arbitrum Sepolia to close positions.');
+      }
+
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
       const network = await provider.getNetwork();

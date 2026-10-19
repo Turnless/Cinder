@@ -24,9 +24,8 @@ export async function POST(request) {
     
     // Webhook security validation
     if (!verifyTelegramSignature(signature, bodyText)) {
-      const token = process.env.TELEGRAM_BOT_TOKEN;
-      if (!token || token === 'your_telegram_bot_token') {
-        console.error('[SECURITY] TELEGRAM_BOT_TOKEN not configured. Rejecting webhook to fail closed.');
+      if (!process.env.TELEGRAM_WEBHOOK_SECRET) {
+        console.error('[SECURITY] TELEGRAM_WEBHOOK_SECRET not configured. Rejecting webhook to fail closed.');
         return NextResponse.json({ success: false, error: 'Server misconfigured' }, { status: 500 });
       }
       console.warn('[WARNING] Unauthorized Telegram webhook attempt. Invalid signature.');
@@ -59,7 +58,8 @@ export async function POST(request) {
             try {
               // Look up the token in the database
               const tokenRows = await query(
-                'SELECT wallet_address FROM telegram_auth_tokens WHERE token = ?',
+                // Links are single-use and expire 15 minutes after the portfolio page creates them
+                "SELECT wallet_address FROM telegram_auth_tokens WHERE token = ? AND created_at >= datetime('now', '-15 minutes')",
                 [token]
               );
               

@@ -21,6 +21,7 @@ export function WalletProvider({ children }) {
   const [walletChecked, setWalletChecked] = useState(false);
   const [walletAddress, setWalletAddress] = useState(null);
   const [balance, setBalance] = useState(0); // CNDR balance
+  const [isDemoBalance, setIsDemoBalance] = useState(false); // true when no CNDR contract is configured (localStorage balance)
   const [ethBalance, setEthBalance] = useState(null); // Real native ETH balance
   const [isConnecting, setIsConnecting] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
@@ -96,6 +97,7 @@ export function WalletProvider({ children }) {
         const cndrWei = await contract.balanceOf(address);
         const cndrEth = parseFloat(ethers.utils.formatEther(cndrWei));
         setBalance(cndrEth);
+        setIsDemoBalance(false);
       } else {
         // Fallback to local simulated balance if no contract address is set
         const key = `cinder_cndr_balance_${address.toLowerCase()}`;
@@ -105,6 +107,7 @@ export function WalletProvider({ children }) {
           localStorage.setItem(key, cndr);
         }
         setBalance(parseFloat(cndr));
+        setIsDemoBalance(true);
       }
     } catch (err) {
       console.error('Error syncing real Web3 wallet RPC data:', err);
@@ -384,12 +387,14 @@ export function WalletProvider({ children }) {
         walletChecked,
         walletAddress,
         balance,
+        isDemoBalance,
         ethBalance,
         isConnecting,
         isClaiming,
         connectWallet,
         disconnectWallet,
         claimFaucet,
+        ensureCorrectNetwork,
       }}
     >
       {children}

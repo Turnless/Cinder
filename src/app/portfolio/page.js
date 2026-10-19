@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
+import { ethers } from 'ethers';
 import { useRouter } from 'next/navigation';
 import Header from '../../components/shared/Header';
 import PortfolioView from '../../components/trading/PortfolioView';
@@ -9,6 +10,7 @@ import TradeHistory from '../../components/trading/TradeHistory';
 import RiskDashboard from '../../components/trading/RiskDashboard';
 import QuickTrade from '../../components/trading/QuickTrade';
 import { useWallet } from '../../context/WalletContext';
+import { buildTelegramLinkMessage } from '../../lib/telegram-link';
 
 export default function PortfolioPage() {
   const { isConnected, walletAddress, balance: cndrBalance, walletChecked } = useWallet();
@@ -32,10 +34,15 @@ export default function PortfolioPage() {
     if (!walletAddress) return;
     setIsTelegramLoading(true);
     try {
+      // Prove wallet ownership so nobody can link their Telegram to someone else's address
+      const issuedAt = new Date().toISOString();
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signature = await provider.getSigner().signMessage(buildTelegramLinkMessage(walletAddress, issuedAt));
+
       const res = await fetch('/api/telegram-auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: walletAddress })
+        body: JSON.stringify({ address: walletAddress, signature, issuedAt })
       });
       const data = await res.json();
       if (data.success && data.deepLink) {
@@ -45,7 +52,9 @@ export default function PortfolioPage() {
       }
     } catch (e) {
       console.error('Error connecting Telegram:', e);
-      alert('An error occurred. Please try again.');
+      alert(e.code === 'ACTION_REJECTED' || e.code === 4001
+        ? 'Signature request was rejected. Signing is needed to prove you own this wallet.'
+        : 'An error occurred. Please try again.');
     } finally {
       setIsTelegramLoading(false);
     }
@@ -71,7 +80,7 @@ export default function PortfolioPage() {
     } finally {
       setLoading(false);
     }
-  }, [walletAddress, cndrBalance]);
+  }, [walletAddress]);
 
   const checkTelegramStatus = useCallback(async () => {
     if (!walletAddress) return;
@@ -93,7 +102,8 @@ export default function PortfolioPage() {
       checkTelegramStatus();
     }, 30000);
     return () => clearInterval(interval);
-  }, [isConnected, fetchPortfolioData, checkTelegramStatus]);
+    // cndrBalance: refetch when the CNDR balance changes (e.g. after a faucet claim)
+  }, [isConnected, fetchPortfolioData, checkTelegramStatus, cndrBalance]);
 
   const handleTradeSuccess = () => {
     fetchPortfolioData();

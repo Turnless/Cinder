@@ -5,6 +5,7 @@
  */
 
 const ipCache = new Map();
+let lastSweep = Date.now();
 
 // Standard rate limit window configuration
 const WINDOW_MS = 60 * 1000; // 1 minute
@@ -19,7 +20,17 @@ const MAX_REQUESTS_PER_MIN = 60; // 60 requests per minute per IP
  */
 export function rateLimit(ip, limit = MAX_REQUESTS_PER_MIN, windowMs = WINDOW_MS) {
   const now = Date.now();
-  
+
+  // Drop IPs with no requests in the window so the map doesn't grow for the life of the process
+  if (now - lastSweep > windowMs) {
+    for (const [key, times] of ipCache) {
+      if (!times.some(time => time > now - windowMs)) {
+        ipCache.delete(key);
+      }
+    }
+    lastSweep = now;
+  }
+
   if (!ipCache.has(ip)) {
     ipCache.set(ip, []);
   }
@@ -43,4 +54,9 @@ export function rateLimit(ip, limit = MAX_REQUESTS_PER_MIN, windowMs = WINDOW_MS
     remaining: Math.max(0, limit - activeTimestamps.length),
     reset: now + windowMs
   };
+}
+
+// Number of IPs currently tracked (used by tests to check stale entries are dropped)
+export function trackedIpCount() {
+  return ipCache.size;
 }

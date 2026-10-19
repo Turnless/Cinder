@@ -12,6 +12,7 @@ export default function Header() {
     isConnected, 
     walletAddress, 
     balance, 
+    isDemoBalance,
     ethBalance,
     isClaiming, 
     disconnectWallet, 
@@ -114,8 +115,11 @@ export default function Header() {
                   userSelect: 'none'
                 }}
               >
-                <span style={{ color: 'var(--color-wire-gold)', fontWeight: 700 }}>
-                  {balance.toLocaleString()} CNDR
+                <span
+                  style={{ color: 'var(--color-wire-gold)', fontWeight: 700 }}
+                  title={isDemoBalance ? 'Demo balance stored in this browser: no CNDR contract is configured' : undefined}
+                >
+                  {balance.toLocaleString()} CNDR{isDemoBalance ? ' (demo)' : ''}
                 </span>
                 <span style={{ width: '1px', height: '12px', backgroundColor: 'var(--glass-border)' }}></span>
                 <span style={{ color: 'var(--color-linen)', opacity: 0.9 }}>

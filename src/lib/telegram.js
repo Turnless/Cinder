@@ -5,6 +5,7 @@
 
 import { NARRATIVES } from '../engine/narrative.js';
 import { query } from './db.js';
+import { safeEqual } from './secrets.js';
 
 /**
  * Sends a raw text message to a specific Telegram chat or broadcasts to all subscribers.
@@ -177,11 +178,6 @@ export async function sendDailyDigest(portfolioSummary) {
  * @returns {boolean} True if the request is verified as authentic
  */
 export function verifyTelegramSignature(signature, body) {
-  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (!secret) {
-    // Fallback to bot token if no dedicated secret is set
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    return signature === token;
-  }
-  return signature === secret;
+  // set-telegram-webhook.js always registers TELEGRAM_WEBHOOK_SECRET; without it nothing is trusted
+  return safeEqual(signature, process.env.TELEGRAM_WEBHOOK_SECRET);
 }

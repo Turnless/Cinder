@@ -4,41 +4,56 @@ import fs from 'fs';
 import path from 'path';
 import { query, execute } from '../../../lib/db';
 import { rateLimit } from '../../../lib/rate-limiter';
+import { hasValidInternalSecret } from '../../../lib/secrets';
 import { getAINewsFeed } from '../../../lib/sosovalue';
 import { refineAllNews } from '../../../lib/openai';
 
 export const dynamic = 'force-dynamic';
 
-async function ensureDbData() {
-  try {
-    const tables = await query("SELECT name FROM sqlite_master WHERE type='table'");
-    const tableNames = tables.map(t => t.name);
-    const requiredTables = ['stories', 'news_items', 'etf_flows', 'sector_data', 'narrative_history'];
-    const missingTables = requiredTables.filter(t => !tableNames.includes(t));
-    
-    if (missingTables.length > 0) {
-      console.log(`[DB] Missing tables detected: ${missingTables.join(', ')}. Running migration...`);
-      const migrationPath = path.join(process.cwd(), 'migrations', '0001_init.sql');
-      if (fs.existsSync(migrationPath)) {
-        const sqlContent = fs.readFileSync(migrationPath, 'utf8');
-        const statements = sqlContent
-          .split(/;\s*[\r\n]+/)
-          .map(stmt => {
-            return stmt
-              .split('\n')
-              .filter(line => !line.trim().startsWith('--'))
-              .join('\n')
-              .trim();
-          })
-          .filter(stmt => stmt.length > 0);
-        for (const sql of statements) {
-          await execute(sql.endsWith(';') ? sql : sql + ';');
-        }
-        console.log('[DB] Migration completed successfully');
+// Schema check runs once per server process instead of on every request
+let schemaReady = null;
+
+// Every feed visit asks for ?refresh=true; the SoSoValue fetch and AI refinement run at most this often per process
+const NEWS_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+let lastNewsRefreshAt = 0;
+
+function ensureDbData() {
+  if (!schemaReady) {
+    schemaReady = checkAndMigrateSchema().catch((err) => {
+      // Same as before: log and carry on, but let the next request retry
+      console.error('Error ensuring DB schema:', err);
+      schemaReady = null;
+    });
+  }
+  return schemaReady;
+}
+
+async function checkAndMigrateSchema() {
+  const tables = await query("SELECT name FROM sqlite_master WHERE type='table'");
+  const tableNames = tables.map(t => t.name);
+  const requiredTables = ['stories', 'news_items', 'etf_flows', 'sector_data', 'narrative_history'];
+  const missingTables = requiredTables.filter(t => !tableNames.includes(t));
+  
+  if (missingTables.length > 0) {
+    console.log(`[DB] Missing tables detected: ${missingTables.join(', ')}. Running migration...`);
+    const migrationPath = path.join(process.cwd(), 'migrations', '0001_init.sql');
+    if (fs.existsSync(migrationPath)) {
+      const sqlContent = fs.readFileSync(migrationPath, 'utf8');
+      const statements = sqlContent
+        .split(/;\s*[\r\n]+/)
+        .map(stmt => {
+          return stmt
+            .split('\n')
+            .filter(line => !line.trim().startsWith('--'))
+            .join('\n')
+            .trim();
+        })
+        .filter(stmt => stmt.length > 0);
+      for (const sql of statements) {
+        await execute(sql.endsWith(';') ? sql : sql + ';');
       }
+      console.log('[DB] Migration completed successfully');
     }
-  } catch (err) {
-    console.error('Error ensuring DB schema:', err);
   }
 }
 
@@ -65,8 +80,9 @@ export async function GET(request) {
     const type = searchParams.get('type');
     const refresh = searchParams.get('refresh') === 'true';
 
-    // Manual refresh: fetch fresh news, refine via MiMo, cache all
-    if (refresh) {
+    // Manual refresh: fetch fresh news, refine via MiMo, cache all (throttled, see NEWS_REFRESH_INTERVAL_MS)
+    if (refresh && Date.now() - lastNewsRefreshAt >= NEWS_REFRESH_INTERVAL_MS) {
+      lastNewsRefreshAt = Date.now();
       try {
         console.log('[STORIES API] Manual news refresh triggered...');
         const freshNews = await getAINewsFeed(50);
@@ -246,12 +262,10 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     // Require internal API secret for story creation
-    const apiSecret = request.headers.get('x-internal-api-secret');
-    const expectedSecret = process.env.INTERNAL_API_SECRET;
-    if (!expectedSecret) {
+    if (!process.env.INTERNAL_API_SECRET) {
       return NextResponse.json({ success: false, error: 'Server misconfigured: INTERNAL_API_SECRET not set' }, { status: 500 });
     }
-    if (!apiSecret || apiSecret !== expectedSecret) {
+    if (!hasValidInternalSecret(request)) {
       return NextResponse.json({ success: false, error: 'Unauthorized: missing or invalid x-internal-api-secret header' }, { status: 401 });
     }
 
