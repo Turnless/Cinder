@@ -4,6 +4,14 @@ import { updateNarrativeTemperatures } from '../engine/narrative.js';
 import { checkMarketAndTrade, executeStopLossMonitoring, sendDailyDigestAlert } from '../engine/trade-engine.js';
 import { query, execute } from './db.js';
 import { generateMarketPulse, generateDailyDeepDive, classifyNewsBatch, generateStoryFromNewsItem, refineAllNews } from './openai.js';
+import { createJobTracker } from './job-runner.js';
+
+// Tracks every job so runs never overlap and their status can be reported (see scripts/worker.js)
+export const jobTracker = createJobTracker();
+
+// Jobs are started explicitly below, and run on UTC whatever the host's timezone is.
+// A fresh object per job: node-cron writes the task name into the options it's given.
+const cronOptions = (name) => ({ name, scheduled: false, timezone: 'Etc/UTC' });
 
 console.log('[SCHEDULER] Initializing Cinder Scheduler...');
 
@@ -334,6 +342,12 @@ export async function generateAndPublishDailyDeepDive() {
   }
 }
 
+// Hours since an ISO timestamp; Infinity when there is none
+function hoursSince(timestamp) {
+  const ms = Date.parse(timestamp);
+  return Number.isNaN(ms) ? Infinity : (Date.now() - ms) / (60 * 60 * 1000);
+}
+
 /**
  * Runs an initial sync to populate the database with real news feed data on boot.
  */
@@ -360,10 +374,26 @@ export async function runInitialSync() {
     const temps = await updateNarrativeTemperatures();
     console.log('[TEMP] Current narrative temperatures:', temps);
 
-    // Generate first real stories from live data
-    console.log('[PUBLISH] Generating first real Market Pulse & Daily Deep Dive stories from live data...');
-    await generateAndPublishMarketPulse();
-    await generateAndPublishDailyDeepDive();
+    // Generate first real stories from live data, unless recent ones exist:
+    // a worker host restarts on every deploy, which would otherwise publish duplicates
+    const latestRows = await query(
+      `SELECT type, MAX(published_at) as latest FROM stories WHERE type IN ('pulse', 'deep_dive') GROUP BY type`
+    );
+    const latest = Object.fromEntries(latestRows.map(row => [row.type, row.latest]));
+
+    if (hoursSince(latest.pulse) >= 4) {
+      console.log('[PUBLISH] Generating Market Pulse from live data...');
+      await generateAndPublishMarketPulse();
+    } else {
+      console.log('[SYNC] Skipping startup Market Pulse: one was published in the last 4 hours.');
+    }
+
+    if (hoursSince(latest.deep_dive) >= 24) {
+      console.log('[PUBLISH] Generating Daily Deep Dive from live data...');
+      await generateAndPublishDailyDeepDive();
+    } else {
+      console.log('[SYNC] Skipping startup Deep Dive: one was published in the last 24 hours.');
+    }
   } catch (err) {
     console.error('[ERROR] Failed running initial sync:', err);
   }
@@ -389,7 +419,7 @@ export async function runPruningCycle() {
 
 // 1. Fetch AI news feed every hour (0 * * * *)
 
-const hourlyNewsJob = cron.schedule('0 * * * *', async () => {
+const hourlyNewsJob = cron.schedule('0 * * * *', () => jobTracker.runExclusive('hourlyNewsCycle', async () => {
   console.log('[SCHEDULER] Running hourly news fetch and narrative intelligence cycle...');
   try {
     const news = await getAINewsFeed(50);
@@ -494,10 +524,10 @@ const hourlyNewsJob = cron.schedule('0 * * * *', async () => {
   } catch (error) {
     console.error('[ERROR] Error in hourly news and narrative cycle:', error);
   }
-});
+}), cronOptions('hourlyNewsCycle'));
 
 // 2. Fetch ETF flows every 4 hours (0 */4 * * *)
-const etfFlowsJob = cron.schedule('0 */4 * * *', async () => {
+const etfFlowsJob = cron.schedule('0 */4 * * *', () => jobTracker.runExclusive('etfFlows', async () => {
   console.log('[SCHEDULER] Running 4-hourly ETF flows fetch...');
   try {
     const btcFlows = await getETFFlows('BTC');
@@ -508,10 +538,10 @@ const etfFlowsJob = cron.schedule('0 */4 * * *', async () => {
   } catch (error) {
     console.error('[ERROR] Error in ETF flows fetch job:', error);
   }
-});
+}), cronOptions('etfFlows'));
 
 // 3. Fetch Sector performance every 4 hours (0 */4 * * *)
-const sectorPerformanceJob = cron.schedule('0 */4 * * *', async () => {
+const sectorPerformanceJob = cron.schedule('0 */4 * * *', () => jobTracker.runExclusive('sectorPerformance', async () => {
   console.log('[SCHEDULER] Running 4-hourly sector performance fetch...');
   try {
     const sectors = await getSectorPerformance();
@@ -520,20 +550,20 @@ const sectorPerformanceJob = cron.schedule('0 */4 * * *', async () => {
   } catch (error) {
     console.error('[ERROR] Error in sector performance fetch job:', error);
   }
-});
+}), cronOptions('sectorPerformance'));
 
 // 4. Generate Market Pulse every 4 hours (0 */4 * * *)
-const marketPulseJob = cron.schedule('0 */4 * * *', async () => {
+const marketPulseJob = cron.schedule('0 */4 * * *', () => jobTracker.runExclusive('marketPulse', async () => {
   console.log('[SCHEDULER] Running 4-hourly Market Pulse generation trigger...');
   try {
     await generateAndPublishMarketPulse();
   } catch (error) {
     console.error('[ERROR] Error in Market Pulse trigger job:', error);
   }
-});
+}), cronOptions('marketPulse'));
 
 // 5. Generate Daily Deep Dive daily at 08:00 UTC (0 8 * * *)
-const dailyDeepDiveJob = cron.schedule('0 8 * * *', async () => {
+const dailyDeepDiveJob = cron.schedule('0 8 * * *', () => jobTracker.runExclusive('dailyDeepDive', async () => {
   console.log('[SCHEDULER] Running daily Deep Dive generation trigger (08:00 UTC)...');
   try {
     await generateAndPublishDailyDeepDive();
@@ -542,28 +572,28 @@ const dailyDeepDiveJob = cron.schedule('0 8 * * *', async () => {
   } catch (error) {
     console.error('[ERROR] Error in Daily Deep Dive trigger job:', error);
   }
-});
+}), cronOptions('dailyDeepDive'));
 
 // 6. Monitor Stop Losses every 5 minutes (*/5 * * * *)
-const stopLossMonitoringJob = cron.schedule('*/5 * * * *', async () => {
+const stopLossMonitoringJob = cron.schedule('*/5 * * * *', () => jobTracker.runExclusive('stopLossMonitoring', async () => {
   console.log('[SCHEDULER] Running 5-minute stop-loss monitoring job...');
   try {
     await executeStopLossMonitoring();
   } catch (error) {
     console.error('[ERROR] Error in stop-loss monitoring job:', error);
   }
-});
+}), cronOptions('stopLossMonitoring'));
 
 
 // 7. Prune cache every 24 hours at 00:00 UTC (0 0 * * *)
-const pruningJob = cron.schedule('0 0 * * *', async () => {
+const pruningJob = cron.schedule('0 0 * * *', () => jobTracker.runExclusive('pruning', async () => {
   console.log('[INFO] Running 24-hourly database pruning job...');
   try {
     await runPruningCycle();
   } catch (error) {
     console.error('[ERROR] Error in database pruning job:', error);
   }
-});
+}), cronOptions('pruning'));
 
 if (process.env.NODE_ENV !== 'test') {
   // Start all jobs
@@ -576,11 +606,20 @@ if (process.env.NODE_ENV !== 'test') {
   pruningJob.start();
 
   // Run the initial sync in the background
-  runInitialSync();
+  jobTracker.runExclusive('initialSync', runInitialSync);
 
   console.log('[SCHEDULER] All cron schedules successfully started!');
 } else {
   console.log('[SCHEDULER] Running in test environment - cron jobs and initial sync disabled on import');
+}
+
+/**
+ * Stops every cron schedule (jobs already running are left to finish; see jobTracker.waitForIdle).
+ */
+export function stopAllJobs() {
+  for (const job of [hourlyNewsJob, etfFlowsJob, sectorPerformanceJob, marketPulseJob, dailyDeepDiveJob, stopLossMonitoringJob, pruningJob]) {
+    job.stop();
+  }
 }
 
 const scheduler = {
@@ -592,7 +631,9 @@ const scheduler = {
   stopLossMonitoringJob,
   pruningJob,
   runInitialSync,
-  runPruningCycle
+  runPruningCycle,
+  stopAllJobs,
+  jobTracker
 };
 
 export default scheduler;

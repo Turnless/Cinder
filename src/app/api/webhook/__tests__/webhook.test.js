@@ -79,6 +79,30 @@ describe('POST /api/webhook', () => {
     expect(res.status).toBe(200);
     expect(sendMessage).toHaveBeenCalledWith(12345, expect.stringContaining('Cinder Trading Kill-Switch Triggered'));
     expect(global.tradingPaused).toBe(true);
+    // Persisted so the worker process sees it too
+    expect(execute).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO app_settings'), ['true']);
+  });
+
+  it('tells the admin when the pause could not be saved', async () => {
+    execute.mockRejectedValueOnce(new Error('db offline'));
+    const req = {
+      headers: { get: () => 'test_bot_token' },
+      text: async () => JSON.stringify({ message: { text: '/pause', chat: { id: 12345 } } })
+    };
+
+    await POST(req);
+    expect(sendMessage).toHaveBeenCalledWith(12345, expect.stringContaining('Pause NOT saved'));
+  });
+
+  it('persists /resume for the admin', async () => {
+    const req = {
+      headers: { get: () => 'test_bot_token' },
+      text: async () => JSON.stringify({ message: { text: '/resume', chat: { id: 12345 } } })
+    };
+
+    await POST(req);
+    expect(execute).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO app_settings'), ['false']);
+    expect(sendMessage).toHaveBeenCalledWith(12345, expect.stringContaining('Cinder Trading Resumed'));
   });
 
   it('subscribes user on /subscribe', async () => {

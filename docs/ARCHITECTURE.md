@@ -322,11 +322,13 @@ else:
 
 ### Shift Detection Algorithm
 
+Pseudocode; the implementation is `src/engine/shift-detector.js`.
+
 ```python
 def detect_shift(narrative_temperatures, history):
     """
     A shift is detected when:
-    1. A dominant narrative (temp ≥ 70°) starts cooling (dropped ≥ 15° in 48h)
+    1. The dominant narrative (highest 7-day average) is cooling (dropped ≥ 15° in 48h)
     2. An emerging narrative (temp ≥ 40°) is heating (gained ≥ 20° in 48h)
     3. At least 2 of 3 signal sources agree on the direction
     4. Combined confidence ≥ 80%
@@ -780,10 +782,13 @@ To secure sensitive dApp endpoints (`/dashboard` and `/portfolio`):
 - **Client Route Interceptors**: The Next.js client renders checks against the connection context. If the wallet is disconnected, standard pages are pre-empted with `router.push('/')` redirects.
 - **Preview Teasers**: The landing page `/` displays a single latest story teaser. The teaser card content is readable but covered by an absolute-positioned, glassmorphic `Unlock Market Intelligence` card utilizing `backdrop-filter: blur(10px)`. Clicking this card triggers the Connect Wallet modal.
 
-### EIP-4337 Paymaster & ERC-20 Gas Architecture
-To enable gasless CNDR token operations on-chain:
-- **ERC-20 CNDR Faucet Contract**: Holds test allocations and enforces cooldown limits (1,000 CNDR per day per address).
-- **Paymaster Reimbursement**: Under EIP-4337, transactions are submitted as `UserOperations` to a Bundler. The CNDR Token Paymaster contract intercepts the call, burns the gas fee equivalent in CNDR tokens from the user's Smart Wallet balance, and reimburses the Bundler in native testnet gas (ETH) from its own reserve pool.
+### CNDR Token & Settlement
+CNDR is a testnet ERC-20 on Arbitrum Sepolia (`0x6C64923FD6478D265A1b5a971c6bC59cB35A5FA7`, source in `contracts/src/CinderToken.sol`):
+- **Faucet**: any wallet can claim 10,000 CNDR once every 24 hours. Claims are ordinary transactions from the user's wallet (they need a little Arbitrum Sepolia ETH for gas).
+- **Buys**: QuickTrade transfers CNDR to the treasury wallet, then submits the signed order with the transaction hash. The server checks the on-chain transfer (payer, treasury, amount within 2% of the server-priced cost) and accepts each payment once.
+- **Sells**: once a sell is settled, the treasury (`TREASURY_PRIVATE_KEY`) transfers the proceeds back in CNDR.
+
+An earlier ERC-4337 "gasless" faucet path was removed: it used the user's own address as the UserOperation sender, which only works for smart-contract accounts.
 
 ---
 
@@ -793,7 +798,7 @@ To enable gasless CNDR token operations on-chain:
 |---|---|
 | SoSoValue API unreachable | Use cached data (SQLite); degrade story quality; log warning |
 | SoSoValue rate limit hit | Exponential backoff; skip non-critical fetches |
-| SoDEX API unreachable | Cancel trade execution; publish story with "trade pending" status |
+| SoDEX API unreachable | Autonomous trade is skipped and logged; manual trades are recorded and shown as *simulated*, never as filled |
 | SoDEX order rejected | Log error; alert via Telegram; do NOT retry automatically |
 | LLM API failure | Fall back to template-based story (no AI narration); log error |
 | Database corruption | SQLite WAL mode for crash safety; daily backup |
@@ -803,35 +808,41 @@ To enable gasless CNDR token operations on-chain:
 
 ## Deployment Architecture
 
-### Production (Vercel + Railway)
+### Production
 
 ```
-┌──────────────────────┐     ┌──────────────────────┐
-│       VERCEL          │     │      RAILWAY          │
-│                       │     │                       │
-│  Next.js Frontend     │     │  Python Narrative     │
-│  + API Routes         │◀───▶│  Engine (optional)    │
-│  + SSE endpoint       │     │  + Cron scheduler     │
-│  + Turso (libSQl, hosted)      │     │                       │
-│                       │     │                       │
-└───────────┬───────────┘     └───────────────────────┘
-            │
-     ┌──────┴──────┐
-     ▼              ▼
-┌─────────┐  ┌───────────┐
-│SoSoValue│  │   SoDEX   │
-│  API    │  │   API     │
-└─────────┘  └───────────┘
+┌──────────────────────────┐     ┌──────────────────────────┐
+│          VERCEL           │     │  ALWAYS-ON HOST (optional)│
+│                           │     │                           │
+│  Next.js frontend         │     │  scripts/worker.js        │
+│  + API routes             │     │  (node-cron scheduler:    │
+│  + SSE endpoint           │     │   news/narrative cycle,   │
+│                           │     │   stories, stop-losses)   │
+└─────────────┬─────────────┘     └─────────────┬─────────────┘
+              │                                 │
+              └──────────────┬──────────────────┘
+                             ▼
+                  ┌─────────────────────┐
+                  │  Turso (libSQL)     │
+                  └─────────────────────┘
+                             │
+          ┌──────────────────┼──────────────────┐
+          ▼                  ▼                  ▼
+     ┌─────────┐       ┌───────────┐     ┌────────────────┐
+     │SoSoValue│       │   SoDEX   │     │Arbitrum Sepolia│
+     │  API    │       │   API     │     │ (CNDR token)   │
+     └─────────┘       └───────────┘     └────────────────┘
 ```
 
-### Minimal Deployment (Single Server)
+Vercel doesn't keep a process running, so the scheduler only runs where `scripts/worker.js` (or `npm run dev`) is running. Without a worker, the site still serves stored stories and refreshes the news feed on visits (at most every 5 minutes).
 
-For hackathon demo, everything runs on a single machine:
+### Minimal Deployment (Single Machine)
+
 ```bash
-npm run dev          # Next.js (frontend + API + cron)
-python engine/main.py # Narrative engine (optional, can be JS-only)
+npm run dev              # Next.js frontend + API; starts the scheduler in-process on first /api/stories request
+node scripts/worker.js   # or run the scheduler on its own
 ```
 
 ---
 
-*Last updated: July 2026 — Cinder v1.0 (Buildathon Edition)*
+*Last updated: October 2026 — post-Buildathon fixes*
