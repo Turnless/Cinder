@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { ethers } from 'ethers';
 import { execute, query } from '../../../lib/db';
+import { rateLimit } from '../../../lib/rate-limiter';
+import { buildTelegramLinkMessage, TELEGRAM_LINK_MAX_AGE_MS } from '../../../lib/telegram-link';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,15 +37,37 @@ export async function GET(request) {
 /**
  * POST /api/telegram-auth
  * Generates a short-lived unique auth token linked to an EVM wallet address.
+ * The caller must prove it controls the wallet by signing buildTelegramLinkMessage().
  * Returns the Telegram Bot deep-link to trigger connection via Telegram '/start <token>'.
  */
 export async function POST(request) {
   try {
-    const body = await request.json();
-    const { address } = body;
+    const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || '127.0.0.1';
+    const rateResult = rateLimit(ip, 10);
+    if (!rateResult.success) {
+      return NextResponse.json({ success: false, error: 'Too many requests. Please try again later.' }, { status: 429 });
+    }
 
-    if (!address || !address.startsWith('0x')) {
+    const body = await request.json();
+    const { address, signature, issuedAt } = body;
+
+    if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
       return NextResponse.json({ success: false, error: 'Invalid EVM wallet address' }, { status: 400 });
+    }
+
+    // Proof of wallet ownership: a fresh personal_sign over the link message
+    const issuedMs = Date.parse(issuedAt);
+    if (!signature || Number.isNaN(issuedMs) || Math.abs(Date.now() - issuedMs) > TELEGRAM_LINK_MAX_AGE_MS) {
+      return NextResponse.json({ success: false, error: 'A fresh wallet signature is required to link Telegram' }, { status: 401 });
+    }
+    let recovered;
+    try {
+      recovered = ethers.utils.verifyMessage(buildTelegramLinkMessage(address, issuedAt), signature);
+    } catch {
+      recovered = null;
+    }
+    if (!recovered || recovered.toLowerCase() !== address.toLowerCase()) {
+      return NextResponse.json({ success: false, error: 'Wallet signature does not match the address' }, { status: 401 });
     }
 
     // Generate a secure random alphanumeric token

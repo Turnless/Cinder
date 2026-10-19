@@ -1,25 +1,69 @@
 import { NextResponse } from 'next/server';
 import { query, execute, initializeDb } from '../../../lib/db';
 import { getAccountState, placeOrder, getTicker } from '../../../lib/sodex';
+import { hasValidInternalSecret } from '../../../lib/secrets';
+import {
+  getRpcUrl,
+  getCndrTokenAddress,
+  getTreasury,
+  verifyCndrPayment,
+  sendCndrPayout,
+  PAYMENT_PRICE_TOLERANCE
+} from '../../../lib/cndr';
 import { ethers } from 'ethers';
 
 export const dynamic = 'force-dynamic';
 
+// Signed orders carry their signing time (ms) as the nonce; older ones are rejected
+const NONCE_MAX_AGE_MS = 5 * 60 * 1000;
+
+// Last-resort prices when neither SoDEX nor CoinGecko answers (demo mode only for trades)
+const MOCK_PRICES = { BTC: '64850.00', ETH: '3210.00', SOL: '145.50', UNI: '7.50', AAVE: '88.20' };
+
+function getMockPrice(pair) {
+  return MOCK_PRICES[String(pair).split('-')[0].toUpperCase()] || '1.00';
+}
+
+/**
+ * Current market price from SoDEX (with getTicker's CoinGecko fallback), else the mock table.
+ * @param {string} pair - e.g. 'BTC-USDC'
+ * @returns {Promise<{price: string, isMock: boolean}>} Price as a decimal string
+ */
+async function getServerPrice(pair) {
+  try {
+    const ticker = await getTicker(pair);
+    if (parseFloat(ticker?.price) > 0) {
+      return { price: String(ticker.price), isMock: false };
+    }
+  } catch (err) {
+    console.warn(`[WARNING] Live price unavailable for ${pair}:`, err.message);
+  }
+  return { price: getMockPrice(pair), isMock: true };
+}
+
+function isUniqueViolation(err) {
+  return /UNIQUE constraint failed|SQLITE_CONSTRAINT/i.test(String(err?.message || err?.code || ''));
+}
+
+// Migrations run once per server process, before any route reads or writes trade tables
 let dbInitialized = false;
+
+async function ensureDbInitialized() {
+  if (dbInitialized) return;
+  try {
+    await initializeDb();
+    dbInitialized = true;
+  } catch (initErr) {
+    console.warn('[WARNING] DB initialization error:', initErr.message);
+  }
+}
 
 /**
  * GET /api/trade
  * Retrieves SoDEX account state, open positions, and executed trade logs.
  */
 export async function GET(request) {
-  try {
-    if (!dbInitialized) {
-      await initializeDb();
-      dbInitialized = true;
-    }
-  } catch (initErr) {
-    console.warn('[WARNING] DB initialization error:', initErr.message);
-  }
+  await ensureDbInitialized();
   try {
     const { searchParams } = new URL(request.url);
     const paramAddress = searchParams.get('address');
@@ -28,8 +72,12 @@ export async function GET(request) {
     const paramMasterAddress = searchParams.get('masterAddress');
 
     if (paramMasterAddress) {
-      const userAddress = process.env.USER_WALLET_ADDRESS || "0xa7c0689b9d40f12098b02512a945e928478dd38e";
-      return NextResponse.json({ success: true, masterAddress: userAddress });
+      // Address that receives CNDR for BUY orders
+      const treasury = getTreasury();
+      if (!treasury) {
+        return NextResponse.json({ success: false, error: 'Treasury wallet is not configured' }, { status: 503 });
+      }
+      return NextResponse.json({ success: true, masterAddress: treasury.address });
     }
 
     if (paramTicker) {
@@ -59,13 +107,7 @@ export async function GET(request) {
           console.warn(`[WARNING] CoinGecko fallback also failed for ${paramTicker}:`, cgErr.message);
         }
         // Final fallback: mock prices
-        let mockPrice = '1.00';
-        if (paramTicker.startsWith('BTC')) mockPrice = '64850.00';
-        else if (paramTicker.startsWith('ETH')) mockPrice = '3210.00';
-        else if (paramTicker.startsWith('SOL')) mockPrice = '145.50';
-        else if (paramTicker.startsWith('UNI')) mockPrice = '7.50';
-        else if (paramTicker.startsWith('AAVE')) mockPrice = '88.20';
-        return NextResponse.json({ success: true, price: mockPrice, isMock: true });
+        return NextResponse.json({ success: true, price: getMockPrice(paramTicker), isMock: true });
       }
     }
 
@@ -78,8 +120,7 @@ export async function GET(request) {
       const tokenAddress = process.env.NEXT_PUBLIC_CNDR_TOKEN_ADDRESS;
       if (tokenAddress && tokenAddress !== '0x...' && tokenAddress !== '') {
         try {
-          const rpcUrl = process.env.RPC_URL || process.env.ARBITRUM_SEPOLIA_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc';
-          const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+          const provider = new ethers.providers.JsonRpcProvider(getRpcUrl());
           const abi = ["function balanceOf(address owner) view returns (uint256)"];
           const contract = new ethers.Contract(tokenAddress, abi, provider);
           const tokenBal = await contract.balanceOf(userAddress);
@@ -159,7 +200,7 @@ export async function GET(request) {
       if (userAddress) {
         // Dynamically compute positions based on filled trades in database for this user
         const userAddrLower = userAddress.toLowerCase();
-        const dbTrades = await query("SELECT * FROM trades WHERE status = 'filled' AND user_address = ?", [userAddrLower]);
+        const dbTrades = await query("SELECT * FROM trades WHERE status IN ('filled', 'simulated') AND user_address = ?", [userAddrLower]);
         const userPositions = {};
 
         for (const t of dbTrades) {
@@ -267,7 +308,7 @@ export async function GET(request) {
     let virtualBalance = INITIAL_VIRTUAL_BALANCE;
     if (tradeHistoryAddr) {
       const userTrades = await query(
-        "SELECT side, quantity, fill_price FROM trades WHERE user_address = ? AND status = 'filled' ORDER BY created_at ASC",
+        "SELECT side, quantity, fill_price FROM trades WHERE user_address = ? AND status IN ('filled', 'simulated') ORDER BY created_at ASC",
         [tradeHistoryAddr]
       );
       for (const t of userTrades) {
@@ -303,27 +344,41 @@ export async function GET(request) {
 
 /**
  * POST /api/trade
- * Executes a manual trade override or triggers an evaluation of narrative shifts.
- * Must enforce server-side risk config checks.
+ * Executes a manual trade, authenticated either by the internal API secret (trusted callers)
+ * or by an EIP-712 signature from the trading wallet (QuickTrade / PortfolioView).
+ *
+ * Wallet-signed trades additionally require:
+ * - a fresh, unused nonce (replay protection)
+ * - SELL: an open position in the database covering the quantity
+ * - BUY with CNDR deployed: an on-chain CNDR payment to the treasury, used only once
+ * Fill prices always come from the server's price feed or the exchange, never from the request.
  */
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { pair, side, orderType, quantity, price, stopLossPrice, clientWallet, signature, nonce } = body;
+    const { pair, side, orderType, quantity, price, stopLossPrice, clientWallet, signature, nonce, txHash } = body;
 
-    // Auth: accept internal API secret (for scheduler) OR wallet signature (for client QuickTrade)
-    const apiSecret = request.headers.get('x-internal-api-secret');
-    const expectedSecret = process.env.INTERNAL_API_SECRET;
-    const hasInternalAuth = expectedSecret && apiSecret && apiSecret === expectedSecret;
+    // Auth: accept internal API secret (trusted callers) OR wallet signature (client QuickTrade)
+    const hasInternalAuth = hasValidInternalSecret(request);
+    const isClientTrade = !hasInternalAuth;
 
-    if (!hasInternalAuth) {
-      // Fall back to wallet signature verification for client-side trades
+    if (isClientTrade) {
       if (!clientWallet || !signature || signature === '0x') {
         return NextResponse.json(
           { success: false, error: 'Unauthorized: provide x-internal-api-secret header or wallet signature' },
           { status: 401 }
         );
       }
+
+      // Nonce must be the signing time (ms) and recent, so old signatures can't be replayed later
+      const nonceMs = Number(nonce);
+      if (!Number.isSafeInteger(nonceMs) || Math.abs(Date.now() - nonceMs) > NONCE_MAX_AGE_MS) {
+        return NextResponse.json(
+          { success: false, error: 'Unauthorized: order signature is missing a nonce or has expired. Please sign again.' },
+          { status: 401 }
+        );
+      }
+
       // Verify EIP-712 signature from client wallet
       try {
         const chainId = Number(process.env.CHAIN_ID || '421614');
@@ -349,8 +404,7 @@ export async function POST(request) {
         };
         const payloadJson = JSON.stringify({ type: 'newOrder', params: orderParams });
         const payloadHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(payloadJson));
-        const clientNonce = nonce || Date.now();
-        const recoveredAddress = ethers.utils.verifyTypedData(domain, types, { payloadHash, nonce: clientNonce }, signature);
+        const recoveredAddress = ethers.utils.verifyTypedData(domain, types, { payloadHash, nonce: nonceMs }, signature);
         if (recoveredAddress.toLowerCase() !== clientWallet.toLowerCase()) {
           return NextResponse.json(
             { success: false, error: 'Unauthorized: wallet signature does not match clientWallet' },
@@ -370,141 +424,202 @@ export async function POST(request) {
       return NextResponse.json({ success: false, error: 'Missing required parameters (pair, side, orderType, quantity)' }, { status: 400 });
     }
 
+    const sideLower = String(side).toLowerCase();
+    const qtyNum = parseFloat(quantity);
+    if (!['buy', 'sell'].includes(sideLower) || !(qtyNum > 0)) {
+      return NextResponse.json({ success: false, error: 'Invalid side or quantity' }, { status: 400 });
+    }
+
+    await ensureDbInitialized();
+
+    const activeAddress = clientWallet || process.env.USER_WALLET_ADDRESS;
+    const activeAddressLower = (activeAddress || '').toLowerCase();
+
+    // Record the nonce; a duplicate means this exact signed order was already submitted
+    if (isClientTrade) {
+      try {
+        await execute(
+          'INSERT INTO trade_nonces (wallet_address, nonce) VALUES (?, ?)',
+          [activeAddressLower, String(nonce)]
+        );
+      } catch (nonceErr) {
+        if (isUniqueViolation(nonceErr)) {
+          return NextResponse.json({ success: false, error: 'This signed order was already submitted' }, { status: 409 });
+        }
+        throw nonceErr;
+      }
+      // Nonces only need to outlive the signature window; keep the table small
+      execute("DELETE FROM trade_nonces WHERE created_at < datetime('now', '-1 day')").catch(() => {});
+    }
+
+    const sodexApiKey = process.env.SODEX_API_KEY_NAME;
+    const isMockMode = !process.env.USER_WALLET_ADDRESS ||
+                       process.env.USER_WALLET_ADDRESS === 'your_evm_wallet_address_0x...' ||
+                       !sodexApiKey ||
+                       sodexApiKey === 'your_api_key_name';
+
+    // Server-side price: the request's price is only a signed limit, never a fill or payout price
+    const serverPrice = await getServerPrice(pair);
+    if (serverPrice.isMock && !isMockMode) {
+      return NextResponse.json({ success: false, error: `Live price for ${pair} is unavailable. Please try again shortly.` }, { status: 503 });
+    }
+
+    // SELL: the wallet must hold the position it is selling
+    if (isClientTrade && sideLower === 'sell') {
+      const rows = await query(
+        `SELECT LOWER(side) as side, quantity FROM trades
+         WHERE user_address = ? AND pair = ? AND status IN ('filled', 'simulated')`,
+        [activeAddressLower, pair]
+      );
+      const held = rows.reduce((sum, t) => {
+        const q = parseFloat(t.quantity || '0');
+        return t.side === 'buy' ? sum + q : t.side === 'sell' ? sum - q : sum;
+      }, 0);
+      // Small epsilon: positions are displayed (and sent back) rounded to 6 decimals
+      if (qtyNum > held + 1e-6) {
+        return NextResponse.json(
+          { success: false, error: `Insufficient position: you hold ${Math.max(0, held).toFixed(6)} of ${pair.split('-')[0]}` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // BUY with CNDR deployed: require an on-chain payment to the treasury, usable once
+    if (isClientTrade && sideLower === 'buy' && getCndrTokenAddress()) {
+      const treasury = getTreasury();
+      if (!treasury) {
+        return NextResponse.json({ success: false, error: 'Treasury wallet is not configured' }, { status: 503 });
+      }
+      if (!txHash) {
+        return NextResponse.json({ success: false, error: 'Missing CNDR payment transaction (txHash)' }, { status: 402 });
+      }
+
+      const minAmount = qtyNum * parseFloat(serverPrice.price) * (1 - PAYMENT_PRICE_TOLERANCE);
+      const payment = await verifyCndrPayment({ txHash, from: activeAddress, to: treasury.address, minAmount });
+      if (!payment.ok) {
+        return NextResponse.json({ success: false, error: payment.reason }, { status: 402 });
+      }
+
+      try {
+        await execute(
+          'INSERT INTO cndr_payments (tx_hash, wallet_address, pair, amount) VALUES (?, ?, ?, ?)',
+          [txHash.toLowerCase(), activeAddressLower, pair, payment.paid]
+        );
+      } catch (payErr) {
+        if (isUniqueViolation(payErr)) {
+          return NextResponse.json({ success: false, error: 'This CNDR payment was already used for another order' }, { status: 409 });
+        }
+        throw payErr;
+      }
+    }
+
     const tradeId = 'tr_' + Math.random().toString(36).substr(2, 9);
     let sodexOrderId = null;
     let status = 'PENDING';
-    let fillPrice = price || '0.0';
+    let fillPrice = serverPrice.price;
+    let simulated = false;
 
-    // Call SoDEX API
-    try {
-      const orderParams = {
-        pair,
-        side,
-        orderType,
-        quantity,
-        price: price || '0.0',
-        stopPrice: stopLossPrice || '0.0'
-      };
+    const orderParams = {
+      pair,
+      side,
+      orderType,
+      quantity,
+      price: price || '0.0',
+      stopPrice: stopLossPrice || '0.0'
+    };
 
-      const userAddress = process.env.USER_WALLET_ADDRESS;
-      const sodexApiKey = process.env.SODEX_API_KEY_NAME;
-      
-      const isMockMode = !userAddress || 
-                         userAddress === 'your_evm_wallet_address_0x...' || 
-                         !sodexApiKey || 
-                         sodexApiKey === 'your_api_key_name';
-
-      if (isMockMode) {
-        // Mock successful execution
-        sodexOrderId = 'ord_mock_' + Math.random().toString(36).substr(2, 9);
-        status = 'FILLED';
-        if (!price || parseFloat(price) === 0) {
-          fillPrice = pair.startsWith('BTC') ? '64850.00' : '3210.00';
-        }
-      } else {
-        try {
-          const sodexRes = await placeOrder(orderParams);
-          sodexOrderId = sodexRes.orderId;
-          status = sodexRes.status || 'FILLED';
-          fillPrice = sodexRes.fillPrice || price || '0.0';
-        } catch (placeErr) {
-          console.warn('[WARNING] SoDEX live order placement failed, falling back to simulated execution:', placeErr.message);
-          sodexOrderId = 'ord_sim_' + Math.random().toString(36).substr(2, 9);
-          status = 'FILLED';
-          if (!price || parseFloat(price) === 0) {
-            fillPrice = pair.startsWith('BTC') ? '64850.00' : '3210.00';
-          }
-        }
+    if (isMockMode) {
+      // Demo mode: no SoDEX credentials, fill instantly at the server price
+      sodexOrderId = 'ord_mock_' + Math.random().toString(36).substr(2, 9);
+      status = 'FILLED';
+      simulated = true;
+    } else {
+      try {
+        const sodexRes = await placeOrder(orderParams);
+        sodexOrderId = sodexRes.orderId;
+        status = sodexRes.status || 'FILLED';
+        fillPrice = sodexRes.fillPrice || sodexRes.price || serverPrice.price;
+      } catch (placeErr) {
+        // Not recorded as a real fill: the trade is kept (a BUY may already be paid for) but marked simulated
+        console.warn('[WARNING] SoDEX live order placement failed, recording a simulated fill:', placeErr.message);
+        sodexOrderId = 'ord_sim_' + Math.random().toString(36).substr(2, 9);
+        status = 'SIMULATED';
+        simulated = true;
       }
-    } catch (err) {
-      console.error('SoDEX execution failed:', err.message);
-      return NextResponse.json({ success: false, error: `SoDEX exchange execution failed: ${err.message}` }, { status: 500 });
     }
+
+    const statusLower = status.toLowerCase();
+    const isSettled = statusLower === 'filled' || statusLower === 'simulated';
 
     // Auto-calculate stop-loss if not explicitly set (use default SL logic)
     let finalStopLossPrice = stopLossPrice;
-    if (!finalStopLossPrice && side.toLowerCase() === 'buy') {
+    if (!finalStopLossPrice && sideLower === 'buy') {
       const stopLossPercent = parseFloat(process.env.STOP_LOSS_PERCENTAGE || '0.08');
       finalStopLossPrice = (parseFloat(fillPrice) * (1 - stopLossPercent)).toFixed(4);
     }
 
     // Update wallet balance for local/simulated and database consistency
-    const activeAddress = clientWallet || process.env.USER_WALLET_ADDRESS;
     if (activeAddress) {
       try {
         let currentBalance = 10000.00;
-        const rows = await query('SELECT balance FROM wallet_balances WHERE address = ?', [activeAddress.toLowerCase()]);
+        const rows = await query('SELECT balance FROM wallet_balances WHERE address = ?', [activeAddressLower]);
         if (rows && rows.length > 0) {
           currentBalance = parseFloat(rows[0].balance || '0');
         }
-        
-        const cost = parseFloat(quantity) * parseFloat(fillPrice);
-        let newBalance = currentBalance;
-        if (side.toLowerCase() === 'buy') {
-          newBalance = currentBalance - cost;
-        } else if (side.toLowerCase() === 'sell') {
-          newBalance = currentBalance + cost;
-        }
-        
+
+        const cost = qtyNum * parseFloat(fillPrice);
+        const newBalance = sideLower === 'buy' ? currentBalance - cost : currentBalance + cost;
+
         await execute(`
           INSERT INTO wallet_balances (address, balance, updated_at)
           VALUES (?, ?, datetime('now'))
           ON CONFLICT(address) DO UPDATE SET
             balance = excluded.balance,
             updated_at = excluded.updated_at
-        `, [activeAddress.toLowerCase(), newBalance.toFixed(2)]);
+        `, [activeAddressLower, newBalance.toFixed(2)]);
       } catch (balErr) {
         console.error('[ERROR] Failed to update balance in database:', balErr.message);
       }
     }
-    // If it's a SELL, the server master wallet transfers CNDR back to the client's wallet
-    if (side.toLowerCase() === 'sell' && activeAddress) {
-      const tokenAddress = process.env.NEXT_PUBLIC_CNDR_TOKEN_ADDRESS;
-      const privateKey = process.env.SODEX_API_KEY_PRIVATE_KEY;
-      if (tokenAddress && tokenAddress !== '0x...' && tokenAddress !== '' && privateKey && privateKey !== 'your_api_key_private_key') {
-        try {
-          console.log('[INFO] Executing server-side CNDR payout on SELL...');
-          const rpcUrl = process.env.RPC_URL || process.env.ARBITRUM_SEPOLIA_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc';
-          const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
-          const serverWallet = new ethers.Wallet(privateKey, provider);
-          
-          const tokenAbi = ["function transfer(address to, uint256 amount) returns (bool)"];
-          const tokenContract = new ethers.Contract(tokenAddress, tokenAbi, serverWallet);
-          
-          const cost = parseFloat(quantity) * parseFloat(fillPrice);
-          const tx = await tokenContract.transfer(activeAddress, ethers.utils.parseUnits(cost.toFixed(6), 18));
-          console.log('[INFO] CNDR payout transaction sent:', tx.hash);
-          await tx.wait();
-          console.log('[SUCCESS] CNDR payout transaction settled!');
-        } catch (sellTxErr) {
-          console.warn('[WARNING] Failed to execute server-side CNDR transfer payout (likely RPC or network offline):', sellTxErr.message);
-          // Do not fail the API call if we are offline or RPC is down, fall back to database settlement
+
+    // SELL settles in CNDR: the treasury pays the proceeds back to the wallet once the order is settled
+    if (sideLower === 'sell' && activeAddress && isSettled && getCndrTokenAddress()) {
+      try {
+        console.log('[INFO] Executing server-side CNDR payout on SELL...');
+        const payoutHash = await sendCndrPayout(activeAddress, qtyNum * parseFloat(fillPrice));
+        if (payoutHash) {
+          console.log('[SUCCESS] CNDR payout transaction settled:', payoutHash);
         }
+      } catch (sellTxErr) {
+        console.warn('[WARNING] Failed to execute server-side CNDR transfer payout (likely RPC or treasury balance):', sellTxErr.message);
+        // Do not fail the API call if we are offline or RPC is down, fall back to database settlement
       }
     }
+
     // Insert trade into database
     await execute(`
       INSERT INTO trades (id, user_address, side, pair, order_type, quantity, fill_price, stop_loss_price, sodex_order_id, status, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `, [
-      tradeId || '',
-      (activeAddress || '').toLowerCase(),
-      side || '',
-      pair || '',
-      orderType || '',
-      quantity ? String(quantity) : '0.0',
-      fillPrice ? String(fillPrice) : '0.0',
+      tradeId,
+      activeAddressLower,
+      side,
+      pair,
+      orderType,
+      String(quantity),
+      String(fillPrice),
       finalStopLossPrice ? String(finalStopLossPrice) : null,
       sodexOrderId || null,
-      status ? status.toLowerCase() : 'filled'
+      statusLower
     ]);
 
     return NextResponse.json({
       success: true,
       tradeId,
       sodexOrderId,
-      status: status,
-      fillPrice
+      status,
+      fillPrice: String(fillPrice),
+      simulated
     });
   } catch (error) {
     console.error('Error in POST /api/trade:', error);

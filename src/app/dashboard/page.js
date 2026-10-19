@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -37,7 +37,7 @@ export default function DashboardPage() {
     }
   }, [isConnected, walletChecked, router]);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const narrRes = await fetch('/api/narrative');
       const narrJson = await narrRes.json();
@@ -59,7 +59,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [walletAddress]);
 
   useEffect(() => {
     // Only poll when connected
@@ -67,7 +67,7 @@ export default function DashboardPage() {
     fetchData();
     const interval = setInterval(fetchData, 15000);
     return () => clearInterval(interval);
-  }, [isConnected]);
+  }, [isConnected, fetchData]);
 
   const latestShift = narrativeData.shifts?.[0];
   const threshold = tradeData.riskConfig?.threshold || 80;

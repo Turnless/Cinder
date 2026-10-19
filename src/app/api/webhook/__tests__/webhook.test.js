@@ -26,6 +26,19 @@ describe('POST /api/webhook', () => {
     vi.clearAllMocks();
     process.env.TELEGRAM_CHAT_ID = '12345';
     process.env.TELEGRAM_BOT_TOKEN = 'test_bot_token';
+    process.env.TELEGRAM_WEBHOOK_SECRET = 'test_webhook_secret';
+  });
+
+  it('fails closed with 500 when TELEGRAM_WEBHOOK_SECRET is not configured', async () => {
+    delete process.env.TELEGRAM_WEBHOOK_SECRET;
+    verifyTelegramSignature.mockReturnValueOnce(false);
+    const req = {
+      headers: { get: () => 'anything' },
+      text: async () => JSON.stringify({ message: { text: '/help', chat: { id: 111 } } })
+    };
+
+    const res = await POST(req);
+    expect(res.status).toBe(500);
   });
 
   it('rejects unauthorised signatures', async () => {
@@ -97,6 +110,8 @@ describe('POST /api/webhook', () => {
       expect.stringContaining('SELECT wallet_address FROM telegram_auth_tokens'),
       ['token_123']
     );
+    // Only links created in the last 15 minutes are accepted
+    expect(query.mock.calls[0][0]).toContain("created_at >= datetime('now', '-15 minutes')");
     expect(execute).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO telegram_subscriptions'),
       ['555', '0xabcde12345']

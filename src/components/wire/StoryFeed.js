@@ -94,8 +94,8 @@ export default function StoryFeed({ temperatureWidget }) {
         setLiveIndices(mapped);
       } catch (e) {
         console.error('Failed to load live indices:', e);
-        if (isMounted && liveIndices.length === 0) {
-          setLiveIndices(MARKET_INDEXES);
+        if (isMounted) {
+          setLiveIndices(prev => (prev.length === 0 ? MARKET_INDEXES : prev));
         }
       }
     };
@@ -154,6 +154,26 @@ export default function StoryFeed({ temperatureWidget }) {
     fetchStories(1, false);
     // Background refresh: fetch fresh news from SoSoValue without blocking page
     fetch('/api/stories?refresh=true&limit=50').catch(() => {});
+  }, []);
+
+  // SSE only reaches visitors connected to the same server instance (Vercel runs many),
+  // so also poll the newest page and prepend anything we haven't seen
+  useEffect(() => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/stories?offset=0&limit=12');
+        const data = await res.json();
+        if (!data.success || !Array.isArray(data.stories)) return;
+        setStories(prev => {
+          const existingIds = new Set(prev.map(s => s.id));
+          const fresh = data.stories.filter(s => !existingIds.has(s.id));
+          return fresh.length > 0 ? [...fresh, ...prev] : prev;
+        });
+      } catch (err) {
+        // Transient network errors: the next poll or SSE event will catch up
+      }
+    }, 60000);
+    return () => clearInterval(pollInterval);
   }, []);
 
   // Listen to live SSE updates

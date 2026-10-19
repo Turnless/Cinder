@@ -7,7 +7,7 @@ import { useWallet } from '../../context/WalletContext';
 
 export default function QuickTrade({ onTradeSuccess }) {
   // Global Web3 Wallet Context
-  const { walletAddress: globalWalletAddress, connectWallet: globalConnect, isConnecting: globalConnecting } = useWallet();
+  const { walletAddress: globalWalletAddress, connectWallet: globalConnect, isConnecting: globalConnecting, ensureCorrectNetwork } = useWallet();
 
   // Order params
   const [pair, setPair] = useState('BTC-USDC');
@@ -105,13 +105,14 @@ export default function QuickTrade({ onTradeSuccess }) {
     setErrorMessage('');
 
     try {
-      let finalPrice = price || '0.0';
-      if (orderType === 'market') {
-        finalPrice = livePrice || (pair.startsWith('BTC') ? '64850.00' : '3210.00');
+      // The server fills at its own price; this is only used for the CNDR payment and the signed limit
+      const finalPrice = orderType === 'market' ? livePrice : price;
+      if (!finalPrice || parseFloat(finalPrice) <= 0) {
+        throw new Error('Live price is unavailable right now. Please wait a moment and try again.');
       }
 
-      const slPrice = useStopLoss 
-        ? (side === 'buy' 
+      const slPrice = useStopLoss
+        ? (side === 'buy'
             ? (parseFloat(finalPrice) * (1 - stopLossPercentage / 100)).toFixed(2)
             : (parseFloat(finalPrice) * (1 + stopLossPercentage / 100)).toFixed(2)
           )
@@ -121,38 +122,19 @@ export default function QuickTrade({ onTradeSuccess }) {
         throw new Error('Wallet not connected. Please connect your wallet first.');
       }
 
+      // The server verifies signatures against Arbitrum Sepolia; switch before creating the provider
+      if (ensureCorrectNetwork) {
+        const networkOk = await ensureCorrectNetwork();
+        if (!networkOk) {
+          throw new Error('Please switch your wallet to Arbitrum Sepolia to trade.');
+        }
+      }
+
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
       const network = await provider.getNetwork();
 
-      // On-chain CNDR transfer for BUY orders
-      const tokenAddress = process.env.NEXT_PUBLIC_CNDR_TOKEN_ADDRESS;
-      if (side === 'buy' && tokenAddress && tokenAddress !== '0x...' && tokenAddress !== '') {
-        const cost = parseFloat(quantity) * parseFloat(finalPrice);
-        const tokenAbi = [
-          "function transfer(address to, uint256 amount) returns (bool)",
-          "function balanceOf(address owner) view returns (uint256)"
-        ];
-        const tokenContract = new ethers.Contract(tokenAddress, tokenAbi, signer);
-
-        // Verify user has sufficient CNDR balance
-        const walletBal = await tokenContract.balanceOf(activeWalletAddress);
-        const formattedBal = parseFloat(ethers.utils.formatUnits(walletBal, 18));
-        if (formattedBal < cost) {
-          throw new Error(`Insufficient CNDR balance. Required: ${cost.toFixed(2)} CNDR. Your balance: ${formattedBal.toFixed(2)} CNDR. Please claim CNDR from the faucet above.`);
-        }
-
-        setErrorMessage('Please confirm the CNDR transfer in your wallet...');
-        // Get server master wallet address dynamically
-        const masterRes = await fetch('/api/trade?masterAddress=true');
-        const masterData = await masterRes.json();
-        const masterAddress = masterData.masterAddress || "0xa7c0689b9d40f12098b02512a945e928478dd38e";
-
-        const tx = await tokenContract.transfer(masterAddress, ethers.utils.parseUnits(cost.toFixed(6), 18));
-        setErrorMessage('Waiting for CNDR transfer transaction to be mined...');
-        await tx.wait();
-      }
-
+      // 1. Sign the order first, so rejecting the signature never costs CNDR
       const domain = {
         name: 'spot',
         version: '1',
@@ -178,11 +160,45 @@ export default function QuickTrade({ onTradeSuccess }) {
 
       const payloadJson = JSON.stringify({ type: 'newOrder', params: orderParams });
       const payloadHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(payloadJson));
+      // Signing time doubles as the nonce; the server rejects orders signed more than 5 minutes ago
       const nonce = Date.now();
 
       const message = { payloadHash, nonce };
       const signature = await signer._signTypedData(domain, types, message);
 
+      // 2. BUY: pay CNDR to the treasury on-chain; the server verifies this transfer
+      let txHash = null;
+      const tokenAddress = process.env.NEXT_PUBLIC_CNDR_TOKEN_ADDRESS;
+      if (side === 'buy' && tokenAddress && tokenAddress !== '0x...' && tokenAddress !== '') {
+        const cost = parseFloat(quantity) * parseFloat(finalPrice);
+        const tokenAbi = [
+          "function transfer(address to, uint256 amount) returns (bool)",
+          "function balanceOf(address owner) view returns (uint256)"
+        ];
+        const tokenContract = new ethers.Contract(tokenAddress, tokenAbi, signer);
+
+        // Verify user has sufficient CNDR balance
+        const walletBal = await tokenContract.balanceOf(activeWalletAddress);
+        const formattedBal = parseFloat(ethers.utils.formatUnits(walletBal, 18));
+        if (formattedBal < cost) {
+          throw new Error(`Insufficient CNDR balance. Required: ${cost.toFixed(2)} CNDR. Your balance: ${formattedBal.toFixed(2)} CNDR. Please claim CNDR from the faucet above.`);
+        }
+
+        // Treasury address comes from the server; never fall back to a hard-coded address
+        const masterRes = await fetch('/api/trade?masterAddress=true');
+        const masterData = await masterRes.json();
+        if (!masterData.success || !masterData.masterAddress) {
+          throw new Error(masterData.error || 'Trading treasury is not configured. Please try again later.');
+        }
+
+        setErrorMessage('Please confirm the CNDR transfer in your wallet...');
+        const tx = await tokenContract.transfer(masterData.masterAddress, ethers.utils.parseUnits(cost.toFixed(6), 18));
+        setErrorMessage('Waiting for CNDR transfer transaction to be mined...');
+        await tx.wait();
+        txHash = tx.hash;
+      }
+
+      // 3. Submit the signed order (with the payment proof for buys)
       setErrorMessage('Submitting signed order...');
 
       const response = await fetch('/api/trade', {
@@ -199,7 +215,8 @@ export default function QuickTrade({ onTradeSuccess }) {
           stopLossPrice: slPrice,
           clientWallet: activeWalletAddress,
           signature,
-          nonce
+          nonce,
+          txHash
         }),
       });
 
@@ -209,7 +226,9 @@ export default function QuickTrade({ onTradeSuccess }) {
         setStep('success');
         if (onTradeSuccess) onTradeSuccess();
       } else {
-        throw new Error(data.error || 'Server rejected order execution.');
+        // CNDR was already sent; show the payment hash so the transfer can be traced
+        const paymentNote = txHash ? ` (CNDR payment tx: ${txHash})` : '';
+        throw new Error((data.error || 'Server rejected order execution.') + paymentNote);
       }
     } catch (err) {
       console.error(err);
@@ -559,7 +578,14 @@ export default function QuickTrade({ onTradeSuccess }) {
             <div style={{ width: '40px', height: '40px', backgroundColor: 'rgba(74, 222, 128, 0.08)', color: 'var(--color-pulse-green)', border: '2px solid var(--color-pulse-green)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', fontSize: '1.25rem', fontWeight: 'bold', margin: '0 auto 8px auto' }}>
               ✓
             </div>
-            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', color: 'var(--color-pulse-green)' }}>Order Executed Successfully!</h4>
+            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', color: 'var(--color-pulse-green)' }}>
+              {executionResult?.simulated ? 'Order Simulated' : 'Order Executed Successfully!'}
+            </h4>
+            {executionResult?.simulated && (
+              <span style={{ alignSelf: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--color-wire-gold)', border: '1px solid rgba(212, 168, 83, 0.35)', backgroundColor: 'rgba(212, 168, 83, 0.08)', padding: '3px 10px', borderRadius: 'var(--radius-full)' }}>
+                SIMULATED: not executed on SoDEX
+              </span>
+            )}
             
             <div style={{ backgroundColor: 'rgba(60, 61, 55, 0.25)', border: '1px solid var(--glass-border)', padding: '16px', borderRadius: 'var(--radius-lg)', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--color-linen)' }}>
               <div><b>Trade ID:</b> {executionResult?.tradeId}</div>
