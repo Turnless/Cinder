@@ -490,7 +490,7 @@ const hourlyNewsJob = cron.schedule('0 * * * *', async () => {
     console.log('[TEMP] Current narrative temperatures:', temps);
     
     console.log('[ALERT] Running shift detection and trading check...');
-    await checkMarketAndTrade();
+    await checkMarketAndTrade(temps);
   } catch (error) {
     console.error('[ERROR] Error in hourly news and narrative cycle:', error);
   }

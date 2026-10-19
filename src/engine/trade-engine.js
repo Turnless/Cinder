@@ -17,11 +17,11 @@ import { sendMessage, sendNarrativeAlert, sendDailyDigest } from '../lib/telegra
  * @param {string} str - Datetime string
  * @returns {number} Epoch milliseconds
  */
-function parseSqliteDatetime(str) {
+export function parseSqliteDatetime(str) {
   if (!str) return 0;
-  const formatted = (str.endsWith('Z') || str.includes('+') || str.includes('-')) 
-    ? str 
-    : str.replace(' ', 'T') + 'Z';
+  // SQLite's datetime('now') yields "YYYY-MM-DD HH:MM:SS" in UTC with no zone suffix; ISO strings carry one
+  const hasTimezone = /(Z|[+-]\d{2}:?\d{2})$/i.test(str.trim());
+  const formatted = hasTimezone ? str : str.trim().replace(' ', 'T') + 'Z';
   return new Date(formatted).getTime();
 }
 
@@ -117,13 +117,14 @@ async function calculatePortfolioValue(userAddress) {
 /**
  * Initiates the hourly market evaluation and trading cycle.
  * Fetches data, scores narrative regimes, detects shifts, runs risk gates, and executes orders.
+ * @param {Object} [precomputedTemps] - Temperatures already recorded this cycle; skips a second recalculation
  * @returns {Promise<void>}
  */
-export async function checkMarketAndTrade() {
+export async function checkMarketAndTrade(precomputedTemps) {
   console.log('[SYNC] Initiating hourly market evaluation cycle...');
 
-  // 1. Recalculate temperatures and save them to narrative_history
-  const temps = await updateNarrativeTemperatures();
+  // 1. Recalculate temperatures and save them to narrative_history, unless the caller just did
+  const temps = precomputedTemps || await updateNarrativeTemperatures();
 
   // 2. Run shift detection
   const shift = await detectShift(temps);
@@ -482,9 +483,9 @@ export async function runPreTradeChecks(shiftData, accountState) {
 
   // 3. Max open positions gate (limit to 5)
   try {
+    // A stopped-out buy moves from 'filled' to 'stopped', so 'filled' buys are exactly the open positions
     const buyCount = await query("SELECT COUNT(*) as count FROM trades WHERE side = 'buy' AND status = 'filled'");
-    const stoppedCount = await query("SELECT COUNT(*) as count FROM trades WHERE side = 'buy' AND status = 'stopped'");
-    const openCount = (buyCount[0]?.count || 0) - (stoppedCount[0]?.count || 0);
+    const openCount = buyCount[0]?.count || 0;
     if (openCount >= 5) {
       failedGates.push('MAX_POSITIONS_REACHED');
     }
@@ -600,14 +601,21 @@ export async function executeStopLossMonitoring() {
         if (currentPrice <= parseFloat(trade.stop_loss_price || '0')) {
           console.log(`[ALERT] Stop-loss triggered for ${trade.pair}! Price ${currentPrice} <= stop-loss ${trade.stop_loss_price}`);
 
-          // Place sell market order
-          await placeOrder({
+          // Place sell market order (placeOrder throws on HTTP or exchange errors, leaving the trade open)
+          const sellResult = await placeOrder({
             pair: trade.pair,
             side: 'SELL',
             orderType: 'MARKET',
             quantity: trade.quantity,
             price: '0.00'
           });
+
+          // Prefer the exchange's reported fill over the ticker price that triggered the stop
+          const exitPrice = parseFloat(sellResult?.fillPrice || sellResult?.price || '0') || currentPrice;
+          if (sellResult?.status && sellResult.status !== 'FILLED') {
+            // Still closed below: leaving it 'filled' would place another sell on the next 5-minute tick
+            console.warn(`[WARNING] Stop-loss sell for ${trade.pair} (trade ${trade.id}) returned status ${sellResult.status}, not FILLED. Verify on SoDEX.`);
+          }
 
           // Mark trade as closed/stopped
           await execute(
@@ -618,7 +626,7 @@ export async function executeStopLossMonitoring() {
              WHERE id = ?`,
             [
               new Date().toISOString(),
-              currentPrice.toFixed(4),
+              exitPrice.toFixed(4),
               trade.id
             ]
           );

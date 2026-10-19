@@ -52,12 +52,14 @@ import { query, execute, batch } from '../../lib/db.js';
 import { placeOrder, getTicker, fetchAccountBalances, getAccountState } from '../../lib/sodex.js';
 import { detectShift } from '../shift-detector.js';
 import { createBreakingStory } from '../../lib/openai.js';
+import { updateNarrativeTemperatures } from '../narrative.js';
 import {
   runPreTradeChecks,
   calculatePositionSize,
   checkMarketAndTrade,
   executeStopLossMonitoring,
-  sendDailyDigestAlert
+  sendDailyDigestAlert,
+  parseSqliteDatetime
 } from '../trade-engine.js';
 import { sendMessage, sendNarrativeAlert, sendDailyDigest } from '../../lib/telegram.js';
 
@@ -94,6 +96,22 @@ describe('Cinder Trade Execution Engine', () => {
     process.env = { ...originalEnv };
     vi.clearAllMocks();
     vi.restoreAllMocks();
+  });
+
+  describe('parseSqliteDatetime', () => {
+    it("treats SQLite datetime('now') strings as UTC regardless of the server timezone", () => {
+      expect(parseSqliteDatetime('2026-01-15 10:30:00')).toBe(Date.UTC(2026, 0, 15, 10, 30, 0));
+    });
+
+    it('keeps the zone of ISO strings that carry one', () => {
+      expect(parseSqliteDatetime('2026-01-15T10:30:00.000Z')).toBe(Date.UTC(2026, 0, 15, 10, 30, 0));
+      expect(parseSqliteDatetime('2026-01-15T11:30:00+01:00')).toBe(Date.UTC(2026, 0, 15, 10, 30, 0));
+    });
+
+    it('returns 0 for empty input', () => {
+      expect(parseSqliteDatetime(null)).toBe(0);
+      expect(parseSqliteDatetime('')).toBe(0);
+    });
   });
 
   describe('runPreTradeChecks (Pre-trade Risk Gates)', () => {
@@ -193,6 +211,17 @@ describe('Cinder Trade Execution Engine', () => {
 
         const result = await runPreTradeChecks(defaultShift, defaultAccountState);
         expect(result.failedGates).not.toContain('MAX_POSITIONS_REACHED');
+      });
+
+      it('does not let stopped-out trades reduce the open position count', async () => {
+        query.mockImplementation(async (sql) => {
+          if (sql.includes("status = 'filled'")) return [{ count: 5 }];
+          if (sql.includes("status = 'stopped'")) return [{ count: 3 }];
+          return [];
+        });
+
+        const result = await runPreTradeChecks(defaultShift, defaultAccountState);
+        expect(result.failedGates).toContain('MAX_POSITIONS_REACHED');
       });
     });
 
@@ -413,6 +442,36 @@ describe('Cinder Trade Execution Engine', () => {
         expect.arrayContaining(['t-123'])
       );
     });
+
+    it('records the exchange fill price as the exit when SoDEX reports one', async () => {
+      query.mockResolvedValueOnce([
+        { id: 't-123', pair: 'BTC-USDC', quantity: '100', fill_price: '10.00', stop_loss_price: '9.20', status: 'filled' }
+      ]);
+      getTicker.mockResolvedValueOnce({ price: '9.10' });
+      placeOrder.mockResolvedValueOnce({ orderId: 'sell-1', status: 'FILLED', price: '9.05' });
+
+      await executeStopLossMonitoring();
+
+      expect(execute).toHaveBeenCalledWith(
+        expect.stringContaining("SET status = 'stopped'"),
+        [expect.any(String), '9.0500', 't-123']
+      );
+    });
+
+    it('leaves the trade open when the stop-loss sell order fails', async () => {
+      query.mockResolvedValueOnce([
+        { id: 't-123', pair: 'BTC-USDC', quantity: '100', fill_price: '10.00', stop_loss_price: '9.20', status: 'filled' }
+      ]);
+      getTicker.mockResolvedValueOnce({ price: '9.10' });
+      placeOrder.mockRejectedValueOnce(new Error('SoDEX API returned business error'));
+
+      await executeStopLossMonitoring();
+
+      expect(execute).not.toHaveBeenCalledWith(
+        expect.stringContaining("SET status = 'stopped'"),
+        expect.anything()
+      );
+    });
   });
 
   describe('checkMarketAndTrade (Hourly cycle integration)', () => {
@@ -422,6 +481,15 @@ describe('Cinder Trade Execution Engine', () => {
       await checkMarketAndTrade();
       expect(getAccountState).not.toHaveBeenCalled();
       expect(placeOrder).not.toHaveBeenCalled();
+    });
+
+    it('reuses temperatures passed in by the scheduler instead of recording them again', async () => {
+      detectShift.mockResolvedValueOnce(null);
+      const temps = { 'NAR_01': 61.5, 'NAR_02': 40.0 };
+
+      await checkMarketAndTrade(temps);
+      expect(updateNarrativeTemperatures).not.toHaveBeenCalled();
+      expect(detectShift).toHaveBeenCalledWith(temps);
     });
 
     it('runs pre-trade checks and publishes story without trading if risk gates fail', async () => {

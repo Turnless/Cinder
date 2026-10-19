@@ -9,36 +9,46 @@ import { refineAllNews } from '../../../lib/openai';
 
 export const dynamic = 'force-dynamic';
 
-async function ensureDbData() {
-  try {
-    const tables = await query("SELECT name FROM sqlite_master WHERE type='table'");
-    const tableNames = tables.map(t => t.name);
-    const requiredTables = ['stories', 'news_items', 'etf_flows', 'sector_data', 'narrative_history'];
-    const missingTables = requiredTables.filter(t => !tableNames.includes(t));
-    
-    if (missingTables.length > 0) {
-      console.log(`[DB] Missing tables detected: ${missingTables.join(', ')}. Running migration...`);
-      const migrationPath = path.join(process.cwd(), 'migrations', '0001_init.sql');
-      if (fs.existsSync(migrationPath)) {
-        const sqlContent = fs.readFileSync(migrationPath, 'utf8');
-        const statements = sqlContent
-          .split(/;\s*[\r\n]+/)
-          .map(stmt => {
-            return stmt
-              .split('\n')
-              .filter(line => !line.trim().startsWith('--'))
-              .join('\n')
-              .trim();
-          })
-          .filter(stmt => stmt.length > 0);
-        for (const sql of statements) {
-          await execute(sql.endsWith(';') ? sql : sql + ';');
-        }
-        console.log('[DB] Migration completed successfully');
+// Schema check runs once per server process instead of on every request
+let schemaReady = null;
+
+function ensureDbData() {
+  if (!schemaReady) {
+    schemaReady = checkAndMigrateSchema().catch((err) => {
+      // Same as before: log and carry on, but let the next request retry
+      console.error('Error ensuring DB schema:', err);
+      schemaReady = null;
+    });
+  }
+  return schemaReady;
+}
+
+async function checkAndMigrateSchema() {
+  const tables = await query("SELECT name FROM sqlite_master WHERE type='table'");
+  const tableNames = tables.map(t => t.name);
+  const requiredTables = ['stories', 'news_items', 'etf_flows', 'sector_data', 'narrative_history'];
+  const missingTables = requiredTables.filter(t => !tableNames.includes(t));
+  
+  if (missingTables.length > 0) {
+    console.log(`[DB] Missing tables detected: ${missingTables.join(', ')}. Running migration...`);
+    const migrationPath = path.join(process.cwd(), 'migrations', '0001_init.sql');
+    if (fs.existsSync(migrationPath)) {
+      const sqlContent = fs.readFileSync(migrationPath, 'utf8');
+      const statements = sqlContent
+        .split(/;\s*[\r\n]+/)
+        .map(stmt => {
+          return stmt
+            .split('\n')
+            .filter(line => !line.trim().startsWith('--'))
+            .join('\n')
+            .trim();
+        })
+        .filter(stmt => stmt.length > 0);
+      for (const sql of statements) {
+        await execute(sql.endsWith(';') ? sql : sql + ';');
       }
+      console.log('[DB] Migration completed successfully');
     }
-  } catch (err) {
-    console.error('Error ensuring DB schema:', err);
   }
 }
 
