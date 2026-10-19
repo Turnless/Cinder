@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { query } from '../../../lib/db';
 import { updateNarrativeTemperatures } from '../../../engine/narrative';
 import { rateLimit } from '../../../lib/rate-limiter';
+import { hasValidInternalSecret } from '../../../lib/secrets';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,9 +86,17 @@ export async function GET(request) {
 /**
  * POST /api/narrative
  * Programmatic trigger to update narrative scores manually.
+ * Requires x-internal-api-secret: each call writes a full set of narrative_history rows.
  */
 export async function POST(request) {
   try {
+    if (!process.env.INTERNAL_API_SECRET) {
+      return NextResponse.json({ success: false, error: 'Server misconfigured: INTERNAL_API_SECRET not set' }, { status: 500 });
+    }
+    if (!hasValidInternalSecret(request)) {
+      return NextResponse.json({ success: false, error: 'Unauthorized: missing or invalid x-internal-api-secret header' }, { status: 401 });
+    }
+
     const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || '127.0.0.1';
     const rateResult = rateLimit(ip);
     if (!rateResult.success) {
