@@ -16,10 +16,17 @@ interface IERC20 {
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
 }
 
+/**
+ * @title Cinder Token (CNDR)
+ * @dev Testnet settlement token for Cinder, deployed on Arbitrum Sepolia at
+ * 0x6C64923FD6478D265A1b5a971c6bC59cB35A5FA7. Since that deployment, name/symbol/decimals
+ * became constants (same values and getters, no storage slots), so compiling this file
+ * now produces different bytecode than the deployed contract.
+ */
 contract CinderToken is IERC20 {
-    string public name = "Cinder Token";
-    string public symbol = "CNDR";
-    uint8 public decimals = 18;
+    string public constant name = "Cinder Token";
+    string public constant symbol = "CNDR";
+    uint8 public constant decimals = 18;
     uint256 public override totalSupply = 10000000 * 10**18; // 10 Million initial supply
 
     mapping(address => uint256) private _balances;
@@ -68,7 +75,7 @@ contract CinderToken is IERC20 {
     }
 
     /**
-     * @dev Public faucet to claim 1,000 test CNDR tokens once a day.
+     * @dev Public faucet to claim FAUCET_AMOUNT (10,000) test CNDR tokens once a day.
      */
     function claimFaucet() external {
         require(
