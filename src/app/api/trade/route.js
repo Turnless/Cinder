@@ -78,7 +78,7 @@ export async function GET(request) {
       const tokenAddress = process.env.NEXT_PUBLIC_CNDR_TOKEN_ADDRESS;
       if (tokenAddress && tokenAddress !== '0x...' && tokenAddress !== '') {
         try {
-          const rpcUrl = process.env.RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc';
+          const rpcUrl = process.env.RPC_URL || process.env.ARBITRUM_SEPOLIA_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc';
           const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
           const abi = ["function balanceOf(address owner) view returns (uint256)"];
           const contract = new ethers.Contract(tokenAddress, abi, provider);
@@ -464,7 +464,7 @@ export async function POST(request) {
       if (tokenAddress && tokenAddress !== '0x...' && tokenAddress !== '' && privateKey && privateKey !== 'your_api_key_private_key') {
         try {
           console.log('[INFO] Executing server-side CNDR payout on SELL...');
-          const rpcUrl = process.env.RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc';
+          const rpcUrl = process.env.RPC_URL || process.env.ARBITRUM_SEPOLIA_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc';
           const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
           const serverWallet = new ethers.Wallet(privateKey, provider);
           

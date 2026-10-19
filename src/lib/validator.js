@@ -49,8 +49,20 @@ export async function validateStory(storyBody) {
   }
 
   // 2. Extract citations from storyBody
+  // The engine's own risk parameters are facts, not data citations, so stories may quote them
+  const riskPercentages = [
+    parseFloat(process.env.STOP_LOSS_PERCENTAGE || '0.08') * 100,
+    parseFloat(process.env.MAX_ALLOCATION_PER_TRADE || '0.30') * 100,
+    15, // daily loss circuit breaker
+    parseFloat(process.env.NARRATIVE_TRADE_THRESHOLD || '80')
+  ];
+  for (const p of riskPercentages) {
+    if (Number.isFinite(p)) validPercentages.add(p);
+  }
+
   // Extract dollar amounts like $250M, 250M, 250 million, -$50M
-  const flowRegex = /([+-]?\d+(?:\.\d+)?)\s*(?:M|million)/gi;
+  // (word boundary keeps "30 minutes" or "3 months" from reading as flows)
+  const flowRegex = /([+-]?\d+(?:\.\d+)?)\s*(?:M|million)\b/gi;
   let match;
   while ((match = flowRegex.exec(storyBody)) !== null) {
     const val = parseFloat(match[1]);
@@ -71,8 +83,9 @@ export async function validateStory(storyBody) {
     const valAbs = Math.abs(val);
     
     // Ignore confidence percentages (usually >= 80%) or temperatures (e.g. 80%)
+    // Look on both sides: "confidence of 92%" and "92% confidence" are both common phrasings
     const index = match.index;
-    const context = storyBody.slice(Math.max(0, index - 30), index).toLowerCase();
+    const context = storyBody.slice(Math.max(0, index - 30), index + match[0].length + 20).toLowerCase();
     if (context.includes('confidence') || context.includes('probability') || context.includes('confidence level')) {
       continue;
     }
