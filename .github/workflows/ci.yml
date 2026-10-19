@@ -25,3 +25,9 @@ jobs:
 
       - name: Test
         run: npx vitest run
+
+      - name: Build
+        run: npm run build
+        env:
+          # db.js refuses to start in production without a database URL; a throwaway local file satisfies it in CI
+          TURSO_DATABASE_URL: file:ci-build.db

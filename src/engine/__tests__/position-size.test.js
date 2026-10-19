@@ -1,20 +1,20 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { calculatePositionSize } from './trade-engine.js';
+import { calculatePositionSize } from '../trade-engine.js';
 
 // Mock DB and external services to isolate tests and avoid network calls
-vi.mock('../lib/db.js', () => ({
+vi.mock('../../lib/db.js', () => ({
   query: vi.fn(),
   execute: vi.fn(),
 }));
 
-vi.mock('../lib/sodex.js', () => ({
+vi.mock('../../lib/sodex.js', () => ({
   placeOrder: vi.fn(),
   getTicker: vi.fn(),
   fetchAccountBalances: vi.fn(),
   getAccountState: vi.fn(),
 }));
 
-vi.mock('../lib/openai.js', () => ({
+vi.mock('../../lib/openai.js', () => ({
   createBreakingStory: vi.fn(),
 }));
 
