@@ -25,6 +25,11 @@
   --color-shift-red:   #EF4444;
   --color-data-blue:   #60A5FA;
 
+  /* Linen at reduced strength: readable secondary text and dividers (sage alone is too faint for small text) */
+  --text-muted:  rgba(236, 223, 204, 0.64);
+  --text-faint:  rgba(236, 223, 204, 0.42);
+  --rule:        rgba(236, 223, 204, 0.09);
+
   /* Glass and clay layer values */
   --glass-surface:      rgba(60, 61, 55, 0.45);
   --glass-border:       rgba(236, 223, 204, 0.12);
@@ -221,108 +226,6 @@ input, textarea, select {
 .gap-md  { gap: var(--space-md); }
 .gap-lg  { gap: var(--space-lg); }
 .gap-xl  { gap: var(--space-xl); }
-
-/* ----------------------------------------------------------
-   6. Navigation Header Styles
-   ---------------------------------------------------------- */
-.site-header {
-  position: sticky;
-  top: 0;
-  z-index: var(--z-sticky);
-  height: 64px;
-  display: flex;
-  align-items: center;
-  background: var(--glass-surface);
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-  border-bottom: 1px solid var(--glass-border);
-  box-shadow: 0 2px 24px rgba(15, 16, 14, 0.60);
-}
-
-.nav-container {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 0 var(--space-lg);
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.logo-link {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  text-decoration: none;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.35rem;
-  letter-spacing: -0.5px;
-}
-
-.logo-alpha {
-  color: var(--color-linen);
-}
-
-.logo-wire {
-  color: var(--color-wire-gold);
-}
-
-.logo-section {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-}
-
-.nav-right {
-  display: flex;
-  align-items: center;
-  gap: var(--space-lg);
-}
-
-.nav-links {
-  list-style: none;
-  display: flex;
-  gap: var(--space-lg);
-  margin: 0;
-  padding: 0;
-}
-
-.nav-links a {
-  position: relative;
-  text-decoration: none;
-  color: var(--color-linen);
-  opacity: 0.80;
-  font-family: var(--font-body);
-  font-weight: 500;
-  font-size: 0.9rem;
-  padding: var(--space-sm) 0;
-  transition: opacity var(--duration-fast) ease;
-}
-
-.nav-links a::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 0;
-  height: 2px;
-  background-color: var(--color-wire-gold);
-  transition: width 0.2s ease;
-}
-
-.nav-links a:hover {
-  opacity: 1;
-}
-
-.nav-links a:hover::after,
-.nav-links a.active::after {
-  width: 100%;
-}
-
-.nav-links a.active {
-  opacity: 1;
-}
 
 /* Launch App CTA */
 .btn-launch {
@@ -915,26 +818,10 @@ input, textarea, select {
    13. Responsive Breakpoints
    ---------------------------------------------------------- */
 
-/* Tablet/Mobile Header Layout: below 768px */
-@media (max-width: 768px) {
-  .site-header .btn-launch {
-    display: none !important;
-  }
-  .nav-links {
-    gap: var(--space-md) !important;
-  }
-  .nav-links a {
-    font-size: 0.825rem !important;
-  }
-}
-
 /* Mobile Header Details: below 639px */
 @media (max-width: 639px) {
   .live-indicator .status-text {
     display: none !important;
-  }
-  .logo-link {
-    font-size: 1.15rem !important;
   }
 }
 
@@ -942,10 +829,6 @@ input, textarea, select {
 @media (max-width: 639px) {
   .container {
     padding: 0 var(--space-md);
-  }
-
-  .site-header {
-    height: 56px;
   }
 
   .grid-2,
@@ -1192,3 +1075,73 @@ input, textarea, select {
   animation: ticker-slide 30s linear infinite;
 }
 
+
+/* ----------------------------------------------------------
+   Site footer (shared by every page)
+   ---------------------------------------------------------- */
+.site-footer {
+  margin-top: auto;
+  border-top: 1px solid rgba(236, 223, 204, 0.09);
+  padding: 48px 24px 32px;
+  font-family: var(--font-body);
+}
+
+.site-footer-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 24px 48px;
+}
+
+.site-footer-brand {
+  display: grid;
+  gap: 10px;
+  max-width: 28rem;
+}
+
+.site-footer-logo {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 700;
+  width: fit-content;
+}
+
+.site-footer-brand p {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: rgba(236, 223, 204, 0.64);
+}
+
+.site-footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 12px 28px;
+  font-size: 0.92rem;
+}
+
+.site-footer-nav a {
+  color: rgba(236, 223, 204, 0.64);
+  transition: color var(--duration-fast) ease;
+}
+
+.site-footer-nav a:hover {
+  color: var(--color-linen);
+}
+
+.site-footer-nav a:focus-visible,
+.site-footer-logo:focus-visible {
+  outline: 2px solid var(--color-wire-gold);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.site-footer-legal {
+  margin-top: 36px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(236, 223, 204, 0.06);
+  font-size: 0.8rem;
+  color: rgba(236, 223, 204, 0.42);
+}

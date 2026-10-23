@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { query, execute, initializeDb } from '../../../lib/db';
 import { getAccountState, placeOrder, getTicker } from '../../../lib/sodex';
 import { hasValidInternalSecret } from '../../../lib/secrets';
+import { getRiskConfig } from '../../../lib/risk-config';
 import {
   getRpcUrl,
   getCndrTokenAddress,
@@ -239,11 +240,12 @@ export async function GET(request) {
             const value = qty * curPriceNum;
             const pnlPct = entPriceNum > 0 ? ((curPriceNum - entPriceNum) / entPriceNum) * 100 : 0;
 
+            // This wallet's own latest stop-loss for the pair, not whichever wallet bought last
             const lastBuy = await query(`
               SELECT stop_loss_price FROM trades 
-              WHERE pair = ? AND side = 'buy' AND status = 'filled' 
+              WHERE pair = ? AND user_address = ? AND side = 'buy' AND status = 'filled' 
               ORDER BY created_at DESC LIMIT 1
-            `, [`${asset}-USDC`]);
+            `, [`${asset}-USDC`, userAddrLower]);
             
             const stopLoss = lastBuy && lastBuy.length > 0 && lastBuy[0].stop_loss_price
               ? parseFloat(lastBuy[0].stop_loss_price).toFixed(2)
@@ -328,13 +330,7 @@ export async function GET(request) {
       balance: tradeHistoryAddr ? virtualBalance.toFixed(2) : balance,
       positions,
       trades: dbTrades,
-      riskConfig: {
-        autoTradeEnabled: process.env.AUTO_TRADE_ENABLED === 'true',
-        cooldownHours: parseInt(process.env.COOLDOWN_HOURS || '48'),
-        maxAllocation: parseFloat(process.env.MAX_ALLOCATION_PER_TRADE || '0.30'),
-        stopLossPercentage: parseFloat(process.env.STOP_LOSS_PERCENTAGE || '0.08'),
-        threshold: parseInt(process.env.NARRATIVE_TRADE_THRESHOLD || '80')
-      }
+      riskConfig: getRiskConfig()
     });
   } catch (error) {
     console.error('Error fetching trade details in API:', error);

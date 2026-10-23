@@ -1,381 +1,231 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
-import { motion } from 'framer-motion';
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Header from '../../components/shared/Header';
-import Timeline from '../../components/narrative/Timeline';
-import ShiftAlert from '../../components/narrative/ShiftAlert';
-import TemperatureGauge from '../../components/narrative/TemperatureGauge';
+import Footer from '../../components/shared/Footer';
 import { useWallet } from '../../context/WalletContext';
+import { useNarrative } from '../../lib/use-narrative';
+import { NARRATIVE_NAMES } from '../../lib/narratives';
+import '../../styles/narratives.css';
 
-const BubbleMap = lazy(() => import('../../components/narrative/BubbleMap'));
+// Readings are recorded hourly; check for a new one every 5 minutes
+const REFRESH_MS = 5 * 60 * 1000;
 
-const NARRATIVE_NAMES = {
-  NAR_01: 'Institutional Accumulation',
-  NAR_02: 'Retail FOMO',
-  NAR_03: 'Regulatory Storm',
-  NAR_04: 'AI/Tech Rotation',
-  NAR_05: 'DeFi Renaissance',
-  NAR_06: 'Risk-Off Flight',
-  NAR_07: 'L2/Infra Cycle',
-  NAR_08: 'Black Swan',
-};
+function utcTime(dateString) {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')} UTC`;
+}
+
+function utcDateTime(dateString) {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '';
+  const day = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  return `${day}, ${utcTime(dateString)}`;
+}
+
+/** Recent temperatures on a fixed 0–100 scale, so rows can be compared at a glance. */
+function Trend({ series, highlight }) {
+  if (series.length < 2) {
+    return <span className="narr-trend-empty">First reading</span>;
+  }
+  const width = 112;
+  const height = 30;
+  const step = width / (series.length - 1);
+  const y = t => height - 2 - (Math.max(0, Math.min(100, t)) / 100) * (height - 4);
+  const points = series.map((t, i) => `${(i * step).toFixed(1)},${y(t).toFixed(1)}`).join(' ');
+  const last = series[series.length - 1];
+  const low = Math.round(Math.min(...series));
+  const high = Math.round(Math.max(...series));
+
+  return (
+    <svg
+      className={`narr-trend${highlight ? ' is-leader' : ''}`}
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label={low === high
+        ? `Last ${series.length} readings, steady at ${low}°`
+        : `Last ${series.length} readings, between ${low}° and ${high}°`}
+    >
+      <polyline points={points} fill="none" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={width} cy={y(last)} r="2.5" />
+    </svg>
+  );
+}
 
 export default function DashboardPage() {
-  const { isConnected, walletChecked, walletAddress } = useWallet();
+  const { isConnected, walletChecked } = useWallet();
   const router = useRouter();
-  const [narrativeData, setNarrativeData] = useState({ temperatures: {}, shifts: [] });
-  const [tradeData, setTradeData] = useState({ riskConfig: { threshold: 80 } });
-  const [loading, setLoading] = useState(true);
+  const narrative = useNarrative(REFRESH_MS);
 
-  // Redirect if disconnected — only after wallet check is complete
+  // Route protection: only redirect after the wallet check is complete
   useEffect(() => {
     if (walletChecked && !isConnected) {
       router.push('/');
     }
   }, [isConnected, walletChecked, router]);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const narrRes = await fetch('/api/narrative');
-      const narrJson = await narrRes.json();
-      if (narrJson.success) {
-        setNarrativeData({
-          temperatures: narrJson.temperatures || {},
-          shifts: narrJson.shifts || []
-        });
-      }
-
-      const addressParam = walletAddress ? `?address=${walletAddress}` : '';
-      const tradeRes = await fetch(`/api/trade${addressParam}`);
-      const tradeJson = await tradeRes.json();
-      if (tradeJson.success) {
-        setTradeData(tradeJson);
-      }
-    } catch (e) {
-      console.error('Failed to load dashboard data:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [walletAddress]);
-
-  useEffect(() => {
-    // Only poll when connected
-    if (!isConnected) return;
-    fetchData();
-    const interval = setInterval(fetchData, 15000);
-    return () => clearInterval(interval);
-  }, [isConnected, fetchData]);
-
-  const latestShift = narrativeData.shifts?.[0];
-  const threshold = tradeData.riskConfig?.threshold || 80;
-
-  // Format active narratives list, sorted by temperature descending
-  const sortedNarratives = Object.entries(NARRATIVE_NAMES).map(([id, name]) => {
-    const data = narrativeData.temperatures[id] || { temperature: 0, recordedAt: new Date().toISOString() };
-    return {
-      id,
-      name,
-      temperature: data.temperature,
-      recordedAt: data.recordedAt
-    };
-  }).sort((a, b) => b.temperature - a.temperature);
-
   if (!walletChecked || !isConnected) {
-    return <main style={{ minHeight: '100vh', backgroundColor: 'var(--color-obsidian)' }} />;
+    return <main className="narr-page" />;
   }
 
+  const { status, rows, readAt, risk, shifts } = narrative;
+  const leader = rows[0];
+  const allocation = risk ? Math.round(risk.maxAllocation * 100) : 30;
+  const stopLoss = risk ? Math.round(risk.stopLossPercentage * 100) : 8;
+  const cooldown = risk ? risk.cooldownHours : 48;
+
   return (
-    <main style={{ minHeight: '100vh', backgroundColor: 'var(--color-obsidian)' }}>
+    <main className="narr-page">
       <Header />
-      
-      <div className="container" style={{ padding: 'var(--space-xl) var(--space-lg)' }}>
-        {/* Dashboard Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)', paddingBottom: 'var(--space-md)', marginBottom: 'var(--space-xl)' }}>
-          <div>
-            <h1 className="section-heading">Narrative Intelligence</h1>
-            <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.875rem', color: 'var(--color-sage)', marginTop: 'var(--space-xs)' }}>
-              Tracks which market narratives are gaining or losing momentum based on ETF flows and sector data.
+
+      <div className="narr-wrap">
+        <header className="narr-head">
+          <h1 className="narr-title">Narratives</h1>
+          <p className="narr-intro">
+            The eight stories Cinder tracks, how hard the market is trading each one, and which data is driving it.
+          </p>
+          {status === 'ready' && leader && (
+            <p className="narr-status">
+              {leader.name} leads at {leader.temperature}°.
+              {readAt && ` Last reading ${utcTime(readAt)}.`}
+              {risk && ` Automatic trading is ${risk.autoTradeEnabled ? 'on' : 'off'}.`}
+            </p>
+          )}
+        </header>
+
+        <section className="narr-section" aria-labelledby="narr-table-title">
+          <div className="narr-section-head">
+            <h2 id="narr-table-title" className="narr-section-title">Temperature and what drives it</h2>
+            <p className="narr-section-intro">
+              Each temperature blends three scores from 0 to 100: news 40%, ETF flows 35%, sector moves 25%.
+              Readings are taken every hour.
             </p>
           </div>
-          {loading && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--color-wire-gold)', fontWeight: 700 }}>
-              <span className="shimmer-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--color-wire-gold)', display: 'inline-block' }} />
-              Loading...
+
+          {status === 'loading' && (
+            <div className="narr-loading" aria-label="Loading readings">
+              {Array.from({ length: 8 }, (_, i) => <div key={i} className="narr-skeleton" />)}
             </div>
           )}
-        </div>
 
-        {/* KPI Cards Row */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: 'var(--space-xl)' }}>
-          {/* Card 1: Dominant Narrative */}
-          <motion.div 
-            whileHover={{ y: -4, borderColor: 'rgba(212, 168, 83, 0.4)' }}
-            className="clay-glass" 
-            style={{ padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid var(--glass-border)', transition: 'border-color 0.2s ease' }}
-          >
-            <div>
-              <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: 'var(--color-sage)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>Dominant Regime</div>
-              <div style={{ fontSize: '0.92rem', fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--color-linen)', lineHeight: 1.2 }}>
-                {sortedNarratives[0]?.name || 'N/A'}
-              </div>
-            </div>
-            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-wire-gold)', boxShadow: '0 0 8px var(--color-wire-gold)' }} />
-          </motion.div>
+          {status === 'empty' && (
+            <p className="narr-message">The first reading appears after Cinder&apos;s next hourly check.</p>
+          )}
 
-          {/* Card 2: Highest Temperature */}
-          <motion.div 
-            whileHover={{ y: -4, borderColor: 'rgba(212, 168, 83, 0.4)' }}
-            className="clay-glass" 
-            style={{ padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid var(--glass-border)', transition: 'border-color 0.2s ease' }}
-          >
-            <div>
-              <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: 'var(--color-sage)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>Regime Temperature</div>
-              <div style={{ fontSize: '1.5rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: (sortedNarratives[0]?.temperature || 0) > 80 ? 'var(--color-shift-red)' : 'var(--color-linen)' }}>
-                {(sortedNarratives[0]?.temperature || 0).toFixed(1)}&deg;
-              </div>
-            </div>
-            {sortedNarratives[0] && (
-              <TemperatureGauge temperature={sortedNarratives[0].temperature} label="" diameter={45} />
-            )}
-          </motion.div>
+          {status === 'error' && (
+            <p className="narr-message">The readings could not be loaded. Refresh the page to try again.</p>
+          )}
 
-          {/* Card 3: Execution Mode */}
-          <motion.div 
-            whileHover={{ y: -4, borderColor: 'rgba(212, 168, 83, 0.4)' }}
-            className="clay-glass" 
-            style={{ padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid var(--glass-border)', transition: 'border-color 0.2s ease' }}
-          >
-            <div>
-              <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: 'var(--color-sage)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>Execution State</div>
-              <div style={{ fontSize: '1rem', fontFamily: 'var(--font-display)', fontWeight: 700, color: tradeData.autoTradeEnabled ? 'var(--color-pulse-green)' : 'var(--color-alert-amber)' }}>
-                {tradeData.autoTradeEnabled ? 'AUTOPILOT' : 'MONITORING'}
-              </div>
-            </div>
-            <span style={{ fontSize: '0.6rem', fontFamily: 'var(--font-mono)', padding: '4px 8px', borderRadius: '6px', background: tradeData.autoTradeEnabled ? 'rgba(74, 222, 128, 0.08)' : 'rgba(212, 168, 83, 0.08)', color: tradeData.autoTradeEnabled ? 'var(--color-pulse-green)' : 'var(--color-wire-gold)', border: '1px solid rgba(212, 168, 83, 0.15)', fontWeight: 700 }}>
-              {tradeData.autoTradeEnabled ? 'ACTIVE' : 'MANUAL'}
-            </span>
-          </motion.div>
-
-          {/* Card 4: Trade Threshold */}
-          <motion.div 
-            whileHover={{ y: -4, borderColor: 'rgba(212, 168, 83, 0.4)' }}
-            className="clay-glass" 
-            style={{ padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid var(--glass-border)', transition: 'border-color 0.2s ease' }}
-          >
-            <div>
-              <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: 'var(--color-sage)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>Trade Trigger Gate</div>
-              <div style={{ fontSize: '1.5rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-linen)' }}>
-                {threshold}&deg;
-              </div>
-            </div>
-            <div style={{ fontSize: '0.65rem', fontFamily: 'var(--font-mono)', color: 'var(--color-sage)', fontWeight: 600 }}>MIN TEMP</div>
-          </motion.div>
-        </div>
-
-        {/* Dashboard Grid */}
-        <div className="dashboard-grid">
-          {/* Left Column: Bubble Map */}
-          <div className="main-viz">
-            <div className="clay-glass bubble-map-panel">
-              <div className="bubble-map-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: '1rem', color: 'var(--color-linen)', borderBottom: '1px solid rgba(236,223,204,0.08)', paddingBottom: '10px' }}>
-                <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-wire-gold)' }} />
-                Narrative Heat Map
-              </div>
-              <Suspense fallback={<div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-sage)', fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>Loading heatmap...</div>}>
-                <BubbleMap temperatures={narrativeData.temperatures} />
-              </Suspense>
-            </div>
-          </div>
-
-          {/* Right Column: Key Stats & Narrative List */}
-          <div className="side-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* Regime Shift Alerts */}
-            <ShiftAlert shift={latestShift} threshold={threshold} />
-
-            {/* Active Narratives Ranked */}
-            <div className="clay-glass active-narratives-card" style={{ padding: '20px', borderRadius: '16px' }}>
-              <div className="card-header" style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: '1rem', color: 'var(--color-linen)', borderBottom: '1px solid rgba(236,223,204,0.08)', paddingBottom: '12px', marginBottom: '16px' }}>
-                Active Narratives
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {sortedNarratives.map((item, idx) => {
-                  const isActive = item.temperature >= threshold;
-                  return (
-                    <motion.div 
-                      key={item.id} 
-                      className="clay-glass"
-                      whileHover={{ scale: 1.01, x: 4, borderColor: 'rgba(212, 168, 83, 0.4)' }}
-                      style={{ 
-                        padding: '12px 16px', 
-                        borderRadius: '12px', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'space-between',
-                        border: '1px solid rgba(236,223,204,0.05)',
-                        background: isActive ? 'rgba(212, 168, 83, 0.03)' : 'rgba(30, 32, 30, 0.25)',
-                        transition: 'border-color 0.2s ease, background 0.2s ease'
-                      }}
-                    >
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <span style={{ fontSize: '0.85rem', fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--color-linen)' }}>
-                          {item.name}
-                        </span>
-                        <span style={{ fontSize: '0.62rem', fontFamily: 'var(--font-mono)', color: 'var(--color-sage)' }}>
-                          Rank #{idx + 1}
-                        </span>
-                      </div>
-                      
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ 
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: '0.9rem',
-                          color: item.temperature > 85 ? 'var(--color-shift-red)' : 
-                                 item.temperature > 65 ? 'var(--color-wire-gold)' : 
-                                 'var(--color-linen)',
-                          fontWeight: 700
-                        }}>
-                          {item.temperature.toFixed(1)}&deg;
-                        </span>
-                        <div style={{ 
-                          width: '8px', 
-                          height: '8px', 
-                          borderRadius: '50%', 
-                          backgroundColor: item.temperature > 85 ? 'var(--color-shift-red)' : 
-                                           item.temperature > 65 ? 'var(--color-wire-gold)' : 
-                                           'var(--color-sage)',
-                          boxShadow: item.temperature > 85 ? '0 0 8px var(--color-shift-red)' : 'none'
-                        }} />
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Narrative Timelines & System Logs */}
-        <div className="dashboard-row" style={{ marginTop: 'var(--space-2xl)' }}>
-          <h3 className="section-heading" style={{ fontSize: '1.25rem', marginBottom: 'var(--space-md)', borderLeft: '4px solid var(--color-wire-gold)', paddingLeft: '16px' }}>
-            Historical Regime Timelines
-          </h3>
-          <Timeline shifts={narrativeData.shifts} />
-        </div>
-
-        <div className="dashboard-row" style={{ marginTop: 'var(--space-2xl)' }}>
-          <h3 className="section-heading" style={{ fontSize: '1.25rem', marginBottom: 'var(--space-md)', borderLeft: '4px solid var(--color-wire-gold)', paddingLeft: '16px' }}>
-            Autonomous Execution Logs
-          </h3>
-          <div className="clay-glass table-container" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid var(--glass-border)' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', letterSpacing: '0.05em' }}>Timestamp</th>
-                  <th style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', letterSpacing: '0.05em' }}>Regime Transition</th>
-                  <th style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', letterSpacing: '0.05em' }}>Action Code</th>
-                  <th style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', letterSpacing: '0.05em' }}>Execution Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {narrativeData.shifts.length === 0 ? (
+          {status === 'ready' && (
+            <div className="narr-table-wrap">
+              <table className="narr-table">
+                <thead>
                   <tr>
-                    <td colSpan="4" style={{ textAlign: 'center', color: 'var(--color-sage)', padding: '40px 0', fontFamily: 'var(--font-body)', fontSize: '0.85rem' }}>
-                      No execution logs generated yet. Waiting for market shifts.
-                    </td>
+                    <th scope="col">Narrative</th>
+                    <th scope="col" className="is-number">Temperature</th>
+                    <th scope="col">Recent readings</th>
+                    <th scope="col" className="is-number">News</th>
+                    <th scope="col" className="is-number">ETF flows</th>
+                    <th scope="col" className="is-number">Sectors</th>
                   </tr>
-                ) : (
-                  narrativeData.shifts.map((shift) => {
-                    const dateString = new Date(shift.detected_at).toLocaleString();
-                    const hasTrade = !!shift.trade_id;
-                    return (
-                      <tr key={shift.id} style={{ transition: 'background-color 0.2s ease' }}>
-                        <td className="data-mono" style={{ fontSize: '0.75rem' }}>{dateString}</td>
-                        <td style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--color-linen)' }}>
-                          <span style={{ opacity: 0.7 }}>{NARRATIVE_NAMES[shift.from_narrative] || shift.from_narrative}</span>
-                          <span style={{ color: 'var(--color-wire-gold)', margin: '0 8px' }}>&rarr;</span>
-                          <span>{NARRATIVE_NAMES[shift.to_narrative] || shift.to_narrative}</span>
-                        </td>
-                        <td>
-                          {hasTrade ? (
-                            <span style={{ 
-                              fontFamily: 'var(--font-mono)', 
-                              fontSize: '0.68rem', 
-                              fontWeight: 700, 
-                              padding: '4px 8px', 
-                              borderRadius: '6px', 
-                              background: 'rgba(212, 168, 83, 0.08)', 
-                              color: 'var(--color-wire-gold)', 
-                              border: '1px solid rgba(212, 168, 83, 0.2)' 
-                            }}>
-                              REGIME_SHIFT_BUY
-                            </span>
-                          ) : (
-                            <span style={{ 
-                              fontFamily: 'var(--font-mono)', 
-                              fontSize: '0.68rem', 
-                              fontWeight: 700, 
-                              padding: '4px 8px', 
-                              borderRadius: '6px', 
-                              background: 'rgba(236, 223, 204, 0.04)', 
-                              color: 'var(--color-sage)', 
-                              border: '1px solid rgba(236, 223, 204, 0.1)' 
-                            }}>
-                              RISK_GATE_HOLD
-                            </span>
-                          )}
-                        </td>
-                        <td>
-                          {hasTrade ? (
-                            <span className="data-mono" style={{ 
-                              fontSize: '0.68rem', 
-                              fontWeight: 700, 
-                              padding: '4px 8px', 
-                              borderRadius: '6px', 
-                              background: 'rgba(74, 222, 128, 0.08)', 
-                              color: 'var(--color-pulse-green)', 
-                              border: '1px solid rgba(74, 222, 128, 0.2)',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px'
-                            }}>
-                              <span style={{ 
-                                width: '6px', 
-                                height: '6px', 
-                                borderRadius: '50%', 
-                                backgroundColor: 'var(--color-pulse-green)', 
-                                display: 'inline-block',
-                                boxShadow: '0 0 6px var(--color-pulse-green)',
-                                animation: 'pulse 1.5s infinite'
-                              }} />
-                              Executed
-                            </span>
-                          ) : (
-                            <span style={{ 
-                              fontFamily: 'var(--font-mono)',
-                              fontSize: '0.68rem', 
-                              fontWeight: 700, 
-                              padding: '4px 8px', 
-                              borderRadius: '6px', 
-                              background: 'rgba(239, 68, 68, 0.04)', 
-                              color: 'var(--color-sage)', 
-                              border: '1px solid rgba(239, 68, 68, 0.1)' 
-                            }}>
-                              Ignored
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {rows.map((row, index) => (
+                    <tr key={row.id} className={index === 0 ? 'is-leader' : undefined}>
+                      <th scope="row">{row.name}</th>
+                      <td className="is-number">
+                        <span className="narr-temp">{row.temperature}°</span>
+                        <span
+                          className={`narr-change${row.change > 0 ? ' is-up' : ''}${row.change < 0 ? ' is-down' : ''}`}
+                          aria-label={row.change ? `${row.change > 0 ? 'up' : 'down'} ${Math.abs(row.change)} degrees since the last reading` : undefined}
+                        >
+                          {row.change ? `${row.change > 0 ? '+' : '−'}${Math.abs(row.change)}` : ''}
+                        </span>
+                      </td>
+                      <td><Trend series={row.series} highlight={index === 0} /></td>
+                      <td className="is-number narr-score">{row.scores.news}</td>
+                      <td className="is-number narr-score">{row.scores.flows}</td>
+                      <td className="is-number narr-score">{row.scores.sectors}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section className="narr-section" aria-labelledby="narr-shifts-title">
+          <div className="narr-section-head">
+            <h2 id="narr-shifts-title" className="narr-section-title">Shifts</h2>
+            <p className="narr-section-intro">
+              A shift is when the leading narrative cools at least 15° over 48 hours while another heats at least
+              20° to 40° or more, with two of the three sources agreeing and 80% confidence. Each one gets a
+              breaking story, and a trade if the limits below allow it.
+            </p>
           </div>
-        </div>
+
+          {status === 'ready' && shifts.length === 0 && (
+            <p className="narr-message">
+              No shift detected yet. Cinder compares each narrative with its reading 48 hours earlier, so the first
+              shift needs two days of readings.
+            </p>
+          )}
+
+          {shifts.length > 0 && (
+            <ol className="narr-shifts">
+              {shifts.map(shift => (
+                <li key={shift.id} className="narr-shift">
+                  <time className="narr-shift-time" dateTime={shift.detected_at}>{utcDateTime(shift.detected_at)}</time>
+                  <div className="narr-shift-main">
+                    <p className="narr-shift-title">
+                      {NARRATIVE_NAMES[shift.from_narrative] || shift.from_narrative} gave way to{' '}
+                      {NARRATIVE_NAMES[shift.to_narrative] || shift.to_narrative}
+                    </p>
+                    <p className="narr-shift-meta">
+                      {Math.round(shift.confidence)}% confidence. {shift.trade_id ? 'Trade placed.' : 'No trade placed.'}
+                    </p>
+                    {Array.isArray(shift.signals) && shift.signals.length > 0 && (
+                      <ul className="narr-shift-signals">
+                        {shift.signals.map((signal, i) => <li key={i}>{signal}</li>)}
+                      </ul>
+                    )}
+                    {shift.story_id && (
+                      <Link href={`/story/${shift.story_id}`} className="narr-link">Read the story</Link>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+
+        <section className="narr-section" aria-labelledby="narr-limits-title">
+          <div className="narr-section-head">
+            <h2 id="narr-limits-title" className="narr-section-title">Trading limits</h2>
+            <p className="narr-section-intro">
+              Every automatic trade on SoDEX testnet has to fit inside these limits.
+              {risk && ` Automatic trading is currently ${risk.autoTradeEnabled ? 'on' : 'off'}.`}
+            </p>
+          </div>
+          <dl className="narr-limits">
+            <div><dt>Largest trade</dt><dd>{allocation}% of the portfolio</dd></div>
+            {/* Confidence floor is fixed in src/engine/shift-detector.js */}
+            <div><dt>Confidence needed</dt><dd>80%</dd></div>
+            <div><dt>Trailing stop-loss</dt><dd>{stopLoss}%</dd></div>
+            <div><dt>Time between trades</dt><dd>{cooldown} h</dd></div>
+            <div><dt>Daily loss limit</dt><dd>15%</dd></div>
+            <div><dt>Open positions</dt><dd>5 at most</dd></div>
+          </dl>
+          <Link href="/portfolio" className="narr-link">See your portfolio and trades</Link>
+        </section>
       </div>
+
+      <Footer />
     </main>
   );
 }

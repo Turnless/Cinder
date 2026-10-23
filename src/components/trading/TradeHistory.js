@@ -1,157 +1,73 @@
 'use client';
 
-import React from 'react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
 
+const STATUS_LABELS = {
+  filled: 'Filled',
+  simulated: 'Simulated',
+  stopped: 'Stopped out',
+  closed: 'Closed',
+  cancelled: 'Cancelled',
+  new: 'Pending',
+  pending: 'Pending'
+};
+
+const formatAmount = (n) => parseFloat(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const formatQuantity = (n) => parseFloat(n || 0).toLocaleString(undefined, { maximumFractionDigits: 6 });
+
+// SQLite datetime('now') values carry no zone but are UTC
+function parseTime(value) {
+  if (!value) return null;
+  const hasZone = /(Z|[+-]\d{2}:?\d{2})$/i.test(String(value).trim());
+  const date = new Date(hasZone ? value : String(value).trim().replace(' ', 'T') + 'Z');
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatTime(value) {
+  const date = parseTime(value);
+  if (!date) return '';
+  return date.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+/**
+ * Every trade for this wallet, newest first.
+ * @param {{trades: Array}} props
+ */
 export default function TradeHistory({ trades = [] }) {
+  if (trades.length === 0) {
+    return <p className="pf-message">No trades yet. Your orders and any automatic trades for this wallet appear here.</p>;
+  }
+
   return (
-    <div className="trade-history clay-glass" style={{ padding: 'var(--space-lg)', borderRadius: 'var(--radius-lg)' }}>
-      <div className="portfolio-card-header">
-        <div>
-          <h3 className="section-heading" style={{ fontSize: '1.25rem' }}>
-            Completed Execution History
-          </h3>
-          <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', color: 'var(--color-sage)', marginTop: '2px' }}>
-            Logs of autonomous and manual trades on SoDEX
-          </p>
-        </div>
-        <span 
-          style={{ 
-            fontFamily: 'var(--font-mono)', 
-            fontSize: '0.72rem', 
-            color: 'var(--color-sage)', 
-            backgroundColor: 'var(--color-iron)', 
-            padding: '4px 10px', 
-            borderRadius: 'var(--radius-full)', 
-            border: '1px solid var(--glass-border)' 
-          }}
-        >
-          {trades.length} Total Trades
-        </span>
-      </div>
+    <ol className="pf-history">
+      {trades.map((trade, idx) => {
+        const isBuy = String(trade.side).toLowerCase() === 'buy';
+        const asset = String(trade.pair || '').split('-')[0];
+        const status = String(trade.status || '').toLowerCase();
 
-      <div className="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Side</th>
-              <th>Market</th>
-              <th style={{ textAlign: 'right' }}>Qty</th>
-              <th style={{ textAlign: 'right' }}>Fill Price</th>
-              <th style={{ textAlign: 'right' }}>Stop Loss</th>
-              <th style={{ textAlign: 'center' }}>Status</th>
-              <th style={{ textAlign: 'center' }}>Story</th>
-            </tr>
-          </thead>
-          <tbody>
-            {trades.length === 0 ? (
-              <tr>
-                <td colSpan="8" style={{ textAlign: 'center', color: 'var(--color-sage)', fontStyle: 'italic', padding: 'var(--space-lg) 0' }}>
-                  No execution logs found in the database.
-                </td>
-              </tr>
-            ) : (
-              trades.map((trade, idx) => {
-                const dateStr = new Date(trade.created_at || Date.now()).toLocaleString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  hour12: false
-                });
-
-                const isBuy = trade.side.toLowerCase() === 'buy';
-                const status = trade.status.toUpperCase();
-
-                let statusColor = 'var(--color-sage)';
-                let statusBg = 'rgba(105, 117, 101, 0.08)';
-                let statusBorder = 'rgba(105, 117, 101, 0.25)';
-
-                if (status === 'FILLED') {
-                  statusColor = 'var(--color-pulse-green)';
-                  statusBg = 'rgba(74, 222, 128, 0.08)';
-                  statusBorder = 'rgba(74, 222, 128, 0.25)';
-                } else if (status === 'STOPPED') {
-                  statusColor = 'var(--color-shift-red)';
-                  statusBg = 'rgba(239, 68, 68, 0.08)';
-                  statusBorder = 'rgba(239, 68, 68, 0.25)';
-                } else if (status === 'CANCELLED') {
-                  statusColor = 'var(--color-alert-amber)';
-                  statusBg = 'rgba(245, 158, 11, 0.08)';
-                  statusBorder = 'rgba(245, 158, 11, 0.25)';
-                }
-
-                return (
-                  <motion.tr
-                    key={trade.id || idx}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.2, delay: Math.min(idx * 0.03, 0.5) }}
-                  >
-                    <td className="data-mono" style={{ color: 'var(--color-sage)' }}>{dateStr}</td>
-                    <td>
-                      <span 
-                        style={{ 
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: '0.65rem',
-                          fontWeight: 700,
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          backgroundColor: isBuy ? 'rgba(74, 222, 128, 0.08)' : 'rgba(239, 68, 68, 0.08)',
-                          color: isBuy ? 'var(--color-pulse-green)' : 'var(--color-shift-red)',
-                          border: '1px solid',
-                          borderColor: isBuy ? 'rgba(74, 222, 128, 0.25)' : 'rgba(239, 68, 68, 0.25)'
-                        }}
-                      >
-                        {trade.side.toUpperCase()}
-                      </span>
-                    </td>
-                    <td style={{ fontWeight: 700, color: 'var(--color-linen)' }}>{trade.pair}</td>
-                    <td className="data-mono" style={{ textAlign: 'right' }}>{parseFloat(trade.quantity).toFixed(4)}</td>
-                    <td className="data-mono" style={{ textAlign: 'right' }}>
-                      ${trade.fill_price ? parseFloat(trade.fill_price).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'}
-                    </td>
-                    <td className="data-mono" style={{ textAlign: 'right', color: 'var(--color-sage)' }}>
-                      {trade.stop_loss_price ? `$${parseFloat(trade.stop_loss_price).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : 'N/A'}
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <span 
-                        style={{ 
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: '0.65rem', 
-                          fontWeight: 700, 
-                          padding: '2px 8px', 
-                          borderRadius: 'var(--radius-full)', 
-                          border: '1px solid',
-                          color: statusColor,
-                          backgroundColor: statusBg,
-                          borderColor: statusBorder
-                        }}
-                      >
-                        {status}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      {trade.story_id ? (
-                        <Link 
-                          href={`/story/${trade.story_id}`}
-                          style={{ color: 'var(--color-data-blue)', fontWeight: 600, fontSize: '0.72rem', textDecoration: 'underline' }}
-                        >
-                          View Coverage
-                        </Link>
-                      ) : (
-                        <span style={{ color: 'var(--color-sage)', fontSize: '0.72rem' }}>System Order</span>
-                      )}
-                    </td>
-                  </motion.tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+        return (
+          <li key={trade.id || idx} className="pf-history-row">
+            <time className="pf-history-time" dateTime={parseTime(trade.created_at)?.toISOString()}>
+              {formatTime(trade.created_at)}
+            </time>
+            <div className="pf-history-main">
+              <p className="pf-history-title">
+                {isBuy ? 'Bought' : 'Sold'} {formatQuantity(trade.quantity)} {asset}
+                {trade.fill_price ? ` at $${formatAmount(trade.fill_price)}` : ''}
+              </p>
+              <p className="pf-history-meta">
+                <span className={`pf-status is-${status}`}>{STATUS_LABELS[status] || status}</span>
+                {isBuy && trade.stop_loss_price && status === 'filled' && (
+                  <span>Stop-loss at ${formatAmount(trade.stop_loss_price)}</span>
+                )}
+                {trade.story_id
+                  ? <Link href={`/story/${trade.story_id}`} className="pf-link">Read the story behind it</Link>
+                  : <span>Placed by you</span>}
+              </p>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
   );
 }

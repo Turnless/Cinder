@@ -1,113 +1,112 @@
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import { query } from '../../../lib/db';
 import Header from '../../../components/shared/Header';
-import StoryCard from '../../../components/wire/StoryCard';
+import Footer from '../../../components/shared/Footer';
+import StoryArticle from '../../../components/wire/StoryArticle';
+import { getTypeBadgeLabel } from '../../../components/wire/story-format';
+import '../../../styles/story-page.css';
 
 export const dynamic = 'force-dynamic';
+
+async function loadStory(id) {
+  const rows = await query(
+    `SELECT id, type, title, body, summary, chart_data, narrative_state, published_at
+     FROM stories WHERE id = ?`,
+    [id]
+  );
+  const story = rows[0] || null;
+  if (!story) return null;
+
+  for (const field of ['chart_data', 'narrative_state']) {
+    if (typeof story[field] === 'string') {
+      try {
+        story[field] = JSON.parse(story[field]);
+      } catch {
+        story[field] = null;
+      }
+    }
+  }
+  // Plain object for the client component (database rows can carry extra prototype fields)
+  return JSON.parse(JSON.stringify(story));
+}
+
+export async function generateMetadata({ params }) {
+  try {
+    const story = await loadStory(params.id);
+    if (story) {
+      return { title: `${story.title} | Cinder`, description: story.summary || undefined };
+    }
+  } catch {
+    // Fall through to the generic title
+  }
+  return { title: 'Story not found | Cinder' };
+}
+
+function utcDate(dateString) {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
 
 export default async function StoryDetailPage({ params }) {
   const { id } = params;
 
   let story = null;
-  let relatedStories = [];
+  let related = [];
+  let loadFailed = false;
 
   try {
-    // Fetch current story details
-    const stories = await query(
-      `SELECT id, type, title, body, summary, chart_data, narrative_state, published_at 
-       FROM stories WHERE id = ?`,
-      [id]
-    );
-    story = stories[0] || null;
-
-    // Fetch related stories (3 latest, excluding current)
-    relatedStories = await query(
-      `SELECT id, type, title, body, summary, chart_data, narrative_state, published_at 
-       FROM stories WHERE id != ? ORDER BY published_at DESC LIMIT 3`,
+    story = await loadStory(id);
+    related = await query(
+      `SELECT id, type, title, published_at
+       FROM stories WHERE id != ? ORDER BY published_at DESC LIMIT 4`,
       [id]
     );
   } catch (err) {
     console.error('Error loading story detail page:', err);
+    loadFailed = true;
   }
 
-  // Formatting chart_data and narrative_state
-  if (story) {
-    if (typeof story.chart_data === 'string') {
-      try {
-        story.chart_data = JSON.parse(story.chart_data);
-      } catch (e) {
-        story.chart_data = {};
-      }
-    }
-    if (typeof story.narrative_state === 'string') {
-      try {
-        story.narrative_state = JSON.parse(story.narrative_state);
-      } catch (e) {
-        story.narrative_state = {};
-      }
-    }
+  // A missing story is a real 404 (see not-found.js); a failed database read is not
+  if (!story && !loadFailed) {
+    notFound();
   }
 
   return (
-    <main style={{ minHeight: '100vh', backgroundColor: 'var(--color-obsidian)' }}>
+    <main className="story-page">
       <Header />
-      
-      <div className="container" style={{ padding: '0 var(--space-lg)' }}>
-        {!story ? (
-          <div className="clay-glass feed-empty-state" style={{ margin: 'var(--space-3xl) auto' }}>
-            <h4>Intelligence Report Not Found</h4>
-            <p>The requested narrative shift record may have been archived or removed.</p>
-            <a href="/" className="btn-hero-primary">
-              Return to Feed
-            </a>
-          </div>
-        ) : (
-          <>
-            {/* Render full story details using StoryCard with isDetail flag */}
-            <StoryCard story={story} isDetail={true} />
 
-            {/* Related intelligence row */}
-            {relatedStories.length > 0 && (
-              <div style={{ maxWidth: '720px', margin: '0 auto var(--space-3xl) auto', paddingTop: 'var(--space-2xl)', borderTop: '1px solid var(--glass-border)' }}>
-                <h3 
-                  className="section-heading" 
-                  style={{ 
-                    fontSize: '1.25rem', 
-                    marginBottom: 'var(--space-lg)',
-                    fontFamily: 'var(--font-display)',
-                    fontWeight: 700
-                  }}
-                >
-                  Related Intelligence
-                </h3>
-                
-                <div 
-                  style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: '1fr', 
-                    gap: 'var(--space-lg)' 
-                  }}
-                >
-                  {relatedStories.map((relatedStory) => {
-                    // Safety parsing for related cards
-                    if (typeof relatedStory.narrative_state === 'string') {
-                      try {
-                        relatedStory.narrative_state = JSON.parse(relatedStory.narrative_state);
-                      } catch (e) {}
-                    }
-                    return (
-                      <StoryCard 
-                        key={relatedStory.id} 
-                        story={relatedStory} 
-                        isDetail={false} 
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </>
+      <div className="story-wrap">
+        <Link href="/feed" className="story-back">Back to the wire</Link>
+
+        {story ? (
+          <StoryArticle story={story} showMeta />
+        ) : (
+          <div className="story-missing">
+            <h1 className="article-title">This story could not be loaded</h1>
+            <p>Something went wrong reading the story. Refresh the page to try again.</p>
+          </div>
+        )}
+
+        {related.length > 0 && (
+          <section className="story-more" aria-labelledby="story-more-title">
+            <h2 id="story-more-title" className="story-more-title">More from Cinder</h2>
+            <ul>
+              {related.map(item => (
+                <li key={item.id}>
+                  <Link href={`/story/${item.id}`} className="story-more-row">
+                    <span className="story-more-meta">{getTypeBadgeLabel(item.type)}, {utcDate(item.published_at)}</span>
+                    <span className="story-more-headline">{item.title}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
       </div>
+
+      <Footer />
     </main>
   );
 }

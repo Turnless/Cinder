@@ -168,7 +168,8 @@ export async function GET(request) {
     `;
     const storyParams = [];
 
-    if (type && type !== 'news') {
+    // type=cinder: all of Cinder's own stories (every type), without the raw news feed
+    if (type && type !== 'news' && type !== 'cinder') {
       storiesQuery += ` WHERE type = ?`;
       storyParams.push(type);
     }

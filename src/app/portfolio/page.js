@@ -1,38 +1,34 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { ethers } from 'ethers';
 import { useRouter } from 'next/navigation';
 import Header from '../../components/shared/Header';
+import Footer from '../../components/shared/Footer';
 import PortfolioView from '../../components/trading/PortfolioView';
 import TradeHistory from '../../components/trading/TradeHistory';
-import RiskDashboard from '../../components/trading/RiskDashboard';
 import QuickTrade from '../../components/trading/QuickTrade';
 import { useWallet } from '../../context/WalletContext';
 import { buildTelegramLinkMessage } from '../../lib/telegram-link';
+import '../../styles/portfolio-page.css';
+
+const formatAmount = (n) => parseFloat(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function PortfolioPage() {
-  const { isConnected, walletAddress, balance: cndrBalance, walletChecked } = useWallet();
+  const { isConnected, walletAddress, balance: cndrBalance, isDemoBalance, walletChecked } = useWallet();
   const router = useRouter();
-  const [tradeData, setTradeData] = useState({
-    balance: '0.00',
-    positions: [],
-    trades: [],
-    riskConfig: {
-      autoTradeEnabled: false,
-      cooldownHours: 48,
-      maxAllocation: 0.30,
-      stopLossPercentage: 0.08
-    }
-  });
+  const [tradeData, setTradeData] = useState({ positions: [], trades: [] });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [isTelegramLoading, setIsTelegramLoading] = useState(false);
   const [telegramConnected, setTelegramConnected] = useState(false);
+  const [telegramMessage, setTelegramMessage] = useState(null);
 
   const handleConnectTelegram = async () => {
     if (!walletAddress) return;
     setIsTelegramLoading(true);
+    setTelegramMessage(null);
     try {
       // Prove wallet ownership so nobody can link their Telegram to someone else's address
       const issuedAt = new Date().toISOString();
@@ -47,14 +43,18 @@ export default function PortfolioPage() {
       const data = await res.json();
       if (data.success && data.deepLink) {
         window.open(data.deepLink, '_blank');
+        setTelegramMessage({ text: 'Telegram opened in a new tab. Press Start there within 15 minutes to finish linking.' });
       } else {
-        alert(data.error || 'Failed to generate Telegram connection link.');
+        setTelegramMessage({ error: true, text: data.error || 'The Telegram link could not be created.' });
       }
     } catch (e) {
       console.error('Error connecting Telegram:', e);
-      alert(e.code === 'ACTION_REJECTED' || e.code === 4001
-        ? 'Signature request was rejected. Signing is needed to prove you own this wallet.'
-        : 'An error occurred. Please try again.');
+      setTelegramMessage({
+        error: true,
+        text: e.code === 'ACTION_REJECTED' || e.code === 4001
+          ? 'You declined the signature. Signing proves you own this wallet.'
+          : 'The Telegram link could not be created. Try again.'
+      });
     } finally {
       setIsTelegramLoading(false);
     }
@@ -74,9 +74,13 @@ export default function PortfolioPage() {
       const tradeJson = await tradeRes.json();
       if (tradeJson.success) {
         setTradeData(tradeJson);
+        setLoadError(false);
+      } else {
+        setLoadError(true);
       }
     } catch (e) {
       console.error('Error fetching portfolio page data:', e);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -105,175 +109,114 @@ export default function PortfolioPage() {
     // cndrBalance: refetch when the CNDR balance changes (e.g. after a faucet claim)
   }, [isConnected, fetchPortfolioData, checkTelegramStatus, cndrBalance]);
 
-  const handleTradeSuccess = () => {
-    fetchPortfolioData();
-  };
-
-  // Calculate stats bar figures
-  const parsedBalance = parseFloat(tradeData.balance || 0);
-  const positionsValue = tradeData.positions.reduce((acc, pos) => acc + parseFloat(pos.value || 0), 0);
-  const totalValue = parsedBalance + positionsValue;
-
-  const openPositionsCount = tradeData.positions.length;
-  
-  // Calculate average PNL or fallback to nominal default
-  const avgPnl = tradeData.positions.length > 0
-    ? tradeData.positions.reduce((acc, pos) => acc + parseFloat(pos.return || 0), 0) / tradeData.positions.length
-    : 0.00;
-
-  const isProfit = avgPnl >= 0;
-
-  // Extract last trade pair
-  const lastTradePair = tradeData.trades.length > 0
-    ? tradeData.trades[0].pair
-    : 'None';
-
   if (!walletChecked || !isConnected) {
-    return <main style={{ minHeight: '100vh', backgroundColor: 'var(--color-obsidian)' }} />;
+    return <main className="pf-page" />;
   }
 
+  const positions = tradeData.positions || [];
+  const positionsValue = positions.reduce((sum, p) => sum + parseFloat(p.value || 0), 0);
+  // Size-weighted: total value against what the positions cost
+  const positionsCost = positions.reduce((sum, p) => sum + parseFloat(p.quantity || 0) * parseFloat(p.entryPrice || 0), 0);
+  const positionsReturn = positionsCost > 0 ? ((positionsValue - positionsCost) / positionsCost) * 100 : null;
+  const cash = parseFloat(cndrBalance || 0);
+  const total = cash + positionsValue;
+
   return (
-    <main style={{ minHeight: '100vh', backgroundColor: 'var(--color-obsidian)', position: 'relative' }}>
+    <main className="pf-page">
       <Header />
-      
-      <div className="container portfolio-page-container">
-        {/* Page Header */}
-        <div className="portfolio-card-header" style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: 'var(--space-md)', marginBottom: 'var(--space-xl)' }}>
+
+      <div className="pf-wrap">
+        <header className="pf-head">
+          <h1 className="pf-title">Portfolio</h1>
+          <p className="pf-intro">
+            Your CNDR, the positions you have bought with it, and every trade placed from this wallet.
+          </p>
+        </header>
+
+        <dl className="pf-summary" aria-busy={loading}>
           <div>
-            <h1 className="section-heading">Portfolio & Risk Management</h1>
-            <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.875rem', color: 'var(--color-sage)', marginTop: 'var(--space-xs)' }}>
-              Verify smart contract balances, trailing stops, and configure manual execution parameters.
+            <dt>Total value</dt>
+            <dd className="pf-summary-total">{formatAmount(total)} <span>CNDR</span></dd>
+          </div>
+          <div>
+            <dt>{isDemoBalance ? 'CNDR available (demo balance)' : 'CNDR in your wallet'}</dt>
+            <dd>{formatAmount(cash)}</dd>
+          </div>
+          <div>
+            <dt>In positions</dt>
+            <dd>{formatAmount(positionsValue)}</dd>
+          </div>
+          <div>
+            <dt>Return on positions</dt>
+            <dd className={positionsReturn > 0 ? 'is-up' : positionsReturn < 0 ? 'is-down' : undefined}>
+              {positionsReturn === null
+                ? 'No positions'
+                : `${positionsReturn > 0 ? '+' : positionsReturn < 0 ? '−' : ''}${Math.abs(positionsReturn).toFixed(2)}%`}
+            </dd>
+          </div>
+        </dl>
+
+        {loadError && (
+          <p className="pf-message is-error" role="alert">
+            Your positions and trades could not be loaded. The page retries every 30 seconds.
+          </p>
+        )}
+
+        <div className="pf-layout">
+          <div className="pf-main">
+            <section className="pf-section" aria-labelledby="pf-positions-title">
+              <h2 id="pf-positions-title" className="pf-section-title">Positions</h2>
+              <p className="pf-section-intro">
+                Prices are in USDC; 1 CNDR is treated as 1 USDC when you buy or sell.
+              </p>
+              {loading ? <div className="pf-skeleton" /> : <PortfolioView positions={positions} onTradeSuccess={fetchPortfolioData} />}
+            </section>
+
+            <section className="pf-section" aria-labelledby="pf-history-title">
+              <h2 id="pf-history-title" className="pf-section-title">Trades</h2>
+              {loading ? <div className="pf-skeleton" /> : <TradeHistory trades={tradeData.trades || []} />}
+            </section>
+          </div>
+
+          <aside className="pf-rail" aria-label="Trade and alerts">
+            <QuickTrade onTradeSuccess={fetchPortfolioData} />
+
+            <section className="pf-alerts" aria-labelledby="pf-alerts-title">
+              <h2 id="pf-alerts-title" className="pf-alerts-title">Telegram alerts</h2>
+              {telegramConnected ? (
+                <p className="pf-alerts-text">
+                  This wallet is linked. You get narrative shift alerts and trade notifications in Telegram.
+                </p>
+              ) : (
+                <>
+                  <p className="pf-alerts-text">
+                    Get narrative shifts and trades in Telegram. Your wallet signs a message to prove it is yours.
+                  </p>
+                  <button
+                    type="button"
+                    className="pf-button"
+                    onClick={handleConnectTelegram}
+                    disabled={isTelegramLoading || !walletAddress}
+                  >
+                    {isTelegramLoading ? 'Waiting for your wallet' : 'Link Telegram'}
+                  </button>
+                </>
+              )}
+              {telegramMessage && (
+                <p className={`pf-alerts-text${telegramMessage.error ? ' is-error' : ''}`} role={telegramMessage.error ? 'alert' : 'status'}>
+                  {telegramMessage.text}
+                </p>
+              )}
+            </section>
+
+            <p className="pf-rail-note">
+              Automatic trades follow the limits on the <Link href="/dashboard" className="pf-link">narratives dashboard</Link>.
             </p>
-          </div>
-          {loading && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--color-wire-gold)', fontWeight: 700 }}>
-              Syncing Balances...
-            </div>
-          )}
-        </div>
-
-        {/* Top Stat Bar */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: 'var(--space-xl)' }}>
-          {/* Card 1: NAV */}
-          <motion.div 
-            whileHover={{ y: -4, borderColor: 'rgba(212, 168, 83, 0.4)' }}
-            className="clay-glass" 
-            style={{ padding: '20px', borderRadius: '16px', border: '1px solid var(--glass-border)', transition: 'border-color 0.2s ease', display: 'flex', flexDirection: 'column', gap: '6px' }}
-          >
-            <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: 'var(--color-sage)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Net Asset Value</div>
-            <div style={{ fontSize: '1.6rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-linen)' }}>
-              ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <div style={{ fontSize: '0.62rem', color: 'var(--color-sage)' }}>CNDR + positions value</div>
-          </motion.div>
-
-          {/* Card 2: Return */}
-          <motion.div 
-            whileHover={{ y: -4, borderColor: 'rgba(212, 168, 83, 0.4)' }}
-            className="clay-glass" 
-            style={{ padding: '20px', borderRadius: '16px', border: '1px solid var(--glass-border)', transition: 'border-color 0.2s ease', display: 'flex', flexDirection: 'column', gap: '6px' }}
-          >
-            <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: 'var(--color-sage)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Portfolio Return</div>
-            <div style={{ fontSize: '1.6rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: isProfit ? 'var(--color-pulse-green)' : 'var(--color-shift-red)' }}>
-              {isProfit ? '+' : ''}{avgPnl.toFixed(2)}%
-            </div>
-            <div style={{ fontSize: '0.62rem', color: 'var(--color-sage)' }}>Average of active positions</div>
-          </motion.div>
-
-          {/* Card 3: Open Positions */}
-          <motion.div 
-            whileHover={{ y: -4, borderColor: 'rgba(212, 168, 83, 0.4)' }}
-            className="clay-glass" 
-            style={{ padding: '20px', borderRadius: '16px', border: '1px solid var(--glass-border)', transition: 'border-color 0.2s ease', display: 'flex', flexDirection: 'column', gap: '6px' }}
-          >
-            <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: 'var(--color-sage)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Open Positions</div>
-            <div style={{ fontSize: '1.6rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-linen)' }}>
-              {openPositionsCount}
-            </div>
-            <div style={{ fontSize: '0.62rem', color: 'var(--color-sage)' }}>Active risk assets on SoDEX</div>
-          </motion.div>
-
-          {/* Card 4: Last Execution */}
-          <motion.div 
-            whileHover={{ y: -4, borderColor: 'rgba(212, 168, 83, 0.4)' }}
-            className="clay-glass" 
-            style={{ padding: '20px', borderRadius: '16px', border: '1px solid var(--glass-border)', transition: 'border-color 0.2s ease', display: 'flex', flexDirection: 'column', gap: '6px' }}
-          >
-            <div style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: 'var(--color-sage)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Last Execution</div>
-            <div style={{ fontSize: '1.2rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-wire-gold)', marginTop: '4px', textTransform: 'uppercase' }}>
-              {lastTradePair}
-            </div>
-            <div style={{ fontSize: '0.62rem', color: 'var(--color-sage)' }}>Most recent regime trigger</div>
-          </motion.div>
-        </div>
-
-        {/* Portfolio Content Layout */}
-        <div className="portfolio-grid">
-          {/* Column 8: Portfolio View & Trade History */}
-          <div className="portfolio-col-8">
-            <PortfolioView 
-              balance={tradeData.balance}
-              positions={tradeData.positions}
-              onTradeSuccess={handleTradeSuccess}
-            />
-            <div style={{ marginTop: 'var(--space-md)' }}>
-              <TradeHistory trades={tradeData.trades} />
-            </div>
-
-            {/* Telegram Alerts Connection Widget */}
-            <div className="clay-glass" style={{ marginTop: 'var(--space-md)', padding: 'var(--space-md)', borderRadius: 'var(--radius-lg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-md)', border: '1px solid var(--glass-border)' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-linen)' }}>
-                  {telegramConnected ? 'Telegram Alerts Active' : 'Receive Real-Time Telegram Alerts'}
-                </span>
-                <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', color: 'var(--color-sage)' }}>
-                  {telegramConnected
-                    ? 'You will receive narrative shift alerts, trade notifications, and daily digests.'
-                    : 'Link your wallet to get immediate notifications on narrative shifts, executed trades, and trailing stops.'}
-                </span>
-              </div>
-              <button 
-                onClick={telegramConnected ? undefined : handleConnectTelegram}
-                disabled={isTelegramLoading || !walletAddress}
-                style={{
-                  backgroundColor: telegramConnected ? 'rgba(74, 222, 128, 0.08)' : 'rgba(212, 168, 83, 0.08)',
-                  color: telegramConnected ? 'var(--color-pulse-green)' : 'var(--color-wire-gold)',
-                  border: telegramConnected ? '1px solid rgba(74, 222, 128, 0.25)' : '1px solid rgba(212, 168, 83, 0.25)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '8px 16px',
-                  fontFamily: 'var(--font-body)',
-                  fontSize: '0.78rem',
-                  fontWeight: 600,
-                  whiteSpace: 'nowrap',
-                  cursor: telegramConnected ? 'default' : (!walletAddress || isTelegramLoading) ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                {telegramConnected && (
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--color-pulse-green)', display: 'inline-block', boxShadow: '0 0 6px var(--color-pulse-green)' }} />
-                )}
-                {isTelegramLoading ? 'GENERATING LINK...' : telegramConnected ? 'CONNECTED' : 'CONNECT TELEGRAM BOT'}
-              </button>
-            </div>
-          </div>
-          
-          {/* Column 4: Quick Trade & Risk Dashboard */}
-          <div className="portfolio-col-4">
-            <QuickTrade onTradeSuccess={handleTradeSuccess} />
-            <RiskDashboard 
-              positions={tradeData.positions}
-              trades={tradeData.trades || []}
-              autoTradeEnabled={tradeData.riskConfig?.autoTradeEnabled}
-              cooldownHours={tradeData.riskConfig?.cooldownHours}
-              maxAllocation={tradeData.riskConfig?.maxAllocation}
-              stopLossPercentage={tradeData.riskConfig?.stopLossPercentage}
-            />
-          </div>
+          </aside>
         </div>
       </div>
+
+      <Footer />
     </main>
   );
 }
