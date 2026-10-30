@@ -41,7 +41,8 @@ vi.mock('../../lib/sodex.js', () => ({
   }),
   getTicker: vi.fn().mockResolvedValue({ price: '60000.00' }),
   placeOrder: vi.fn().mockResolvedValue({ status: 'FILLED', orderId: 'sodex-order-123', price: '60000.00' }),
-  fetchAccountBalances: vi.fn().mockResolvedValue([{ asset: 'USDC', free: '1000.00' }])
+  fetchAccountBalances: vi.fn().mockResolvedValue([{ asset: 'USDC', free: '1000.00' }]),
+  getSymbolForPair: vi.fn().mockResolvedValue({ name: 'vBTC_vUSDC' })
 }));
 
 describe('Story Data Fidelity Validator Integration', () => {

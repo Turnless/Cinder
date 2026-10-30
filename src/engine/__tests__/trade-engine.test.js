@@ -37,7 +37,8 @@ vi.mock('../../lib/sodex.js', () => ({
   placeOrder: vi.fn(),
   getTicker: vi.fn(),
   fetchAccountBalances: vi.fn(),
-  getAccountState: vi.fn()
+  getAccountState: vi.fn(),
+  getSymbolForPair: vi.fn().mockResolvedValue({ name: 'vBTC_vUSDC' })
 }));
 
 // 6. Mock Telegram module
@@ -585,6 +586,7 @@ describe('Cinder Trade Execution Engine', () => {
         side: 'BUY',
         orderType: 'MARKET',
         quantity: '20000.0000',
+        funds: '3000.00',
         price: '0.00'
       });
 
@@ -770,5 +772,29 @@ describe('Cinder Trade Execution Engine', () => {
         positions: expect.any(Array)
       }));
     });
+  });
+});
+
+describe('pickTargetToken', () => {
+  it('buys the first coin of a narrative that SoDEX lists', async () => {
+    const { pickTargetToken } = await import('../trade-engine.js');
+    const { getSymbolForPair } = await import('../../lib/sodex.js');
+    getSymbolForPair.mockImplementation(async (pair) => {
+      if (['FET-USDC', 'OP-USDC', 'ARB-USDC'].includes(pair)) throw new Error('not listed');
+      return { name: pair };
+    });
+
+    expect(await pickTargetToken('NAR_04')).toBe('NVDA');
+    expect(await pickTargetToken('NAR_07')).toBe('LINK');
+    expect(await pickTargetToken('NAR_01')).toBe('BTC');
+    expect(await pickTargetToken('NAR_03')).toBe('USDC');
+    expect(await pickTargetToken('NAR_99')).toBe('BTC');
+  });
+
+  it('keeps the first choice when nothing is listed, so the trade stops at the price check', async () => {
+    const { pickTargetToken } = await import('../trade-engine.js');
+    const { getSymbolForPair } = await import('../../lib/sodex.js');
+    getSymbolForPair.mockRejectedValue(new Error('not listed'));
+    expect(await pickTargetToken('NAR_07')).toBe('OP');
   });
 });

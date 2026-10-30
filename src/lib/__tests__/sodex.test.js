@@ -165,6 +165,22 @@ describe('server SoDEX client', () => {
       expect(parseFloat(result.fillPrice)).toBeCloseTo(78500);
     });
 
+    it('spends an exact USDC amount on a market buy with funds', async () => {
+      const fetchMock = mockGateway();
+      const result = await settle(placeOrder({ pair: 'BTC-USDC', side: 'BUY', orderType: 'MARKET', quantity: '1', funds: '15.678' }));
+      const [, options] = fetchMock.mock.calls.find(([u]) => u.includes('/trade/orders/batch'));
+      const order = JSON.parse(options.body).orders[0];
+      expect(order).toMatchObject({ side: 1, type: 2, timeInForce: 3, funds: '15.67' });
+      expect(order.quantity).toBeUndefined();
+      expect(result).toMatchObject({ status: 'FILLED', funds: '15.67', quantity: '0.0002' });
+    });
+
+    it('refuses funds below the market minimum', async () => {
+      mockGateway();
+      await expect(placeOrder({ pair: 'BTC-USDC', side: 'BUY', orderType: 'MARKET', funds: '4' }))
+        .rejects.toThrow(/below the minimum 5 USDC/);
+    });
+
     it('never sells more than the account holds', async () => {
       const fetchMock = mockGateway();
       await settle(placeOrder({ pair: 'BTC-USDC', side: 'SELL', orderType: 'MARKET', quantity: '0.0009' }));

@@ -77,27 +77,19 @@ No build step is needed. Configure the host to **restart the process if it exits
 
 **VPS (systemd)**
 
-```ini
-# /etc/systemd/system/cinder-worker.service
-[Unit]
-Description=Cinder scheduler worker
-After=network-online.target
+The server files live in `deploy/vps/`, so the VPS runs exactly what the repo says:
 
-[Service]
-WorkingDirectory=/opt/cinder
-EnvironmentFile=/opt/cinder/.env.worker
-ExecStart=/usr/bin/npm run worker
-Restart=always
-RestartSec=10
-KillSignal=SIGTERM
-TimeoutStopSec=90
+| File | Installed to | Purpose |
+|---|---|---|
+| `cinder-worker.service` | `/etc/systemd/system/` | Sandboxed service running `node scripts/worker.js` as the `cinder` user |
+| `check-env.sh` | `/opt/cinder/` | Runs before every start; refuses missing settings, the master wallet key, or mainnet without `ALLOW_MAINNET=true` |
+| `update.sh` | `/opt/cinder/` | Pulls `main`, installs dependencies and these files, restarts the worker |
+| `env.worker.example` | `/opt/cinder/.env.worker` | The settings to fill in (`chmod 600`) |
 
-[Install]
-WantedBy=multi-user.target
-```
+The code is a clone of the repo in `/opt/cinder/app`, owned by `cinder`. To deploy what is on `main`:
 
 ```bash
-sudo systemctl enable --now cinder-worker
+sudo /opt/cinder/update.sh
 journalctl -u cinder-worker -f
 ```
 

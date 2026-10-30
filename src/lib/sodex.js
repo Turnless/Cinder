@@ -241,10 +241,13 @@ async function findFills(address, orderID, attempts = FILL_POLL_ATTEMPTS) {
 
 /**
  * Places a spot order on Cinder's account and reports how it filled.
- * Sells never ask for more than the account holds, since fees can leave slightly less than was bought.
- * @param {{pair: string, side: string, orderType: string, quantity: string|number, price?: string|number}} orderParams
+ * A market buy with `funds` spends that many USDC instead of asking for a quantity, so the cost is
+ * exact even when the caller's price estimate is off. Sells never ask for more than the account holds,
+ * since fees can leave slightly less than was bought.
+ * @param {{pair: string, side: string, orderType: string, quantity?: string|number, funds?: string|number,
+ *   price?: string|number}} orderParams
  * @returns {Promise<{orderId: string, clOrdID: string, status: 'FILLED'|'NEW'|'UNFILLED',
- *   quantity: string, executedQty: string, price?: string, fillPrice?: string}>}
+ *   quantity: string, executedQty: string, funds?: string, price?: string, fillPrice?: string}>}
  */
 export async function placeOrder(orderParams) {
   const { keyName, privateKey, address } = getCredentials();
@@ -253,26 +256,36 @@ export async function placeOrder(orderParams) {
   const isSell = String(orderParams.side).toLowerCase() === 'sell';
   const isLimit = String(orderParams.orderType).toLowerCase() === 'limit';
 
-  let wanted = parseFloat(orderParams.quantity);
-  if (isSell) {
-    const held = parseFloat(state.balances.find(b => b.coin === symbol.baseCoin)?.free || 0);
-    wanted = Math.min(wanted, held);
-  }
-  const quantity = roundToStep(wanted, symbol.stepSize);
-  if (!(parseFloat(quantity) > 0) || parseFloat(quantity) < (parseFloat(symbol.minQuantity) || 0)) {
-    throw new Error(`Order quantity ${orderParams.quantity} for ${symbol.name} is below the minimum ${symbol.minQuantity}`);
-  }
-
   const clOrdID = `cinder-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const order = {
     symbolID: symbol.id,
     clOrdID,
     side: isSell ? ORDER_SIDE.SELL : ORDER_SIDE.BUY,
     type: isLimit ? ORDER_TYPE.LIMIT : ORDER_TYPE.MARKET,
-    timeInForce: isLimit ? TIME_IN_FORCE.GTC : TIME_IN_FORCE.IOC,
-    quantity
+    timeInForce: isLimit ? TIME_IN_FORCE.GTC : TIME_IN_FORCE.IOC
   };
-  if (isLimit) order.price = roundToStep(orderParams.price, symbol.tickSize);
+
+  const spendsFunds = !isSell && !isLimit && parseFloat(orderParams.funds) > 0;
+  let quantity = null;
+  if (spendsFunds) {
+    order.funds = roundToStep(orderParams.funds, '0.01');
+    const minNotional = parseFloat(symbol.minNotional) || 0;
+    if (parseFloat(order.funds) < minNotional) {
+      throw new Error(`Order of ${order.funds} USDC on ${symbol.name} is below the minimum ${minNotional} USDC`);
+    }
+  } else {
+    let wanted = parseFloat(orderParams.quantity);
+    if (isSell) {
+      const held = parseFloat(state.balances.find(b => b.coin === symbol.baseCoin)?.free || 0);
+      wanted = Math.min(wanted, held);
+    }
+    quantity = roundToStep(wanted, symbol.stepSize);
+    if (!(parseFloat(quantity) > 0) || parseFloat(quantity) < (parseFloat(symbol.minQuantity) || 0)) {
+      throw new Error(`Order quantity ${orderParams.quantity} for ${symbol.name} is below the minimum ${symbol.minQuantity}`);
+    }
+    order.quantity = quantity;
+    if (isLimit) order.price = roundToStep(orderParams.price, symbol.tickSize);
+  }
 
   const params = buildSpotNewOrderParams({ accountID: state.accountId, orders: [order] });
   const data = await sendSigned('POST', SPOT_ACTION.NEW_ORDER, params, privateKey, keyName);
@@ -282,7 +295,8 @@ export async function placeOrder(orderParams) {
   const fills = await findFills(address, orderId, isLimit ? 1 : FILL_POLL_ATTEMPTS);
   const filledEnough = fills.quantity > 0 && (!isLimit || fills.quantity >= parseFloat(quantity) * 0.999);
   const status = filledEnough ? 'FILLED' : isLimit ? 'NEW' : 'UNFILLED';
-  const result = { orderId, clOrdID, status, quantity, executedQty: String(fills.quantity) };
+  const result = { orderId, clOrdID, status, quantity: quantity ?? String(fills.quantity), executedQty: String(fills.quantity) };
+  if (order.funds) result.funds = order.funds;
   if (fills.price) {
     result.price = String(fills.price);
     result.fillPrice = String(fills.price);

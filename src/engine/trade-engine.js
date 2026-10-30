@@ -7,7 +7,7 @@ import crypto from 'crypto';
 import { query, execute, batch } from '../lib/db.js';
 import { NARRATIVES, updateNarrativeTemperatures } from './narrative.js';
 import { detectShift } from './shift-detector.js';
-import { placeOrder, getTicker, fetchAccountBalances, getAccountState } from '../lib/sodex.js';
+import { placeOrder, getTicker, fetchAccountBalances, getAccountState, getSymbolForPair } from '../lib/sodex.js';
 import { getSodexNetwork } from '../lib/sodex-network.js';
 import { createBreakingStory } from '../lib/openai.js';
 import { validateStory, getTemplateStory } from '../lib/validator.js';
@@ -109,6 +109,39 @@ async function calculatePortfolioValue(userAddress) {
   }
 }
 
+// Coins bought for each narrative, in order of preference. The first one SoDEX lists is used,
+// since testnet and mainnet list different coins (no FET or OP on either; ARB on mainnet only).
+export const NARRATIVE_TARGET_TOKENS = {
+  'NAR_01': ['BTC'],
+  'NAR_02': ['DOGE'],
+  'NAR_03': ['USDC'],
+  'NAR_04': ['FET', 'NVDA'],
+  'NAR_05': ['UNI'],
+  'NAR_06': ['USDC'],
+  'NAR_07': ['OP', 'ARB', 'LINK'],
+  'NAR_08': ['USDC']
+};
+
+/**
+ * The coin to buy for a narrative: the first of its candidates with a USDC market on SoDEX.
+ * Falls back to the first candidate when none is listed (the trade then stops at the price check).
+ * @param {string} narrativeId
+ * @returns {Promise<string>}
+ */
+export async function pickTargetToken(narrativeId) {
+  const candidates = NARRATIVE_TARGET_TOKENS[narrativeId] || ['BTC'];
+  if (candidates[0] === 'USDC') return 'USDC';
+  for (const coin of candidates) {
+    try {
+      await getSymbolForPair(`${coin}-USDC`);
+      return coin;
+    } catch {
+      // Not listed on this network; try the next one
+    }
+  }
+  return candidates[0];
+}
+
 /**
  * Initiates the hourly market evaluation and trading cycle.
  * Fetches data, scores narrative regimes, detects shifts, runs risk gates, and executes orders.
@@ -138,19 +171,7 @@ export async function checkMarketAndTrade(precomputedTemps) {
     console.error('[ERROR] Failed to send Telegram narrative shift alert:', err);
   }
 
-  // Target token mapping based on narrative archetypes
-  const NARRATIVE_TARGET_TOKENS = {
-    'NAR_01': 'BTC',
-    'NAR_02': 'DOGE',
-    'NAR_03': 'USDC',
-    'NAR_04': 'FET',
-    'NAR_05': 'UNI',
-    'NAR_06': 'USDC',
-    'NAR_07': 'OP',
-    'NAR_08': 'USDC'
-  };
-
-  const targetToken = NARRATIVE_TARGET_TOKENS[shift.to_narrative] || 'BTC';
+  const targetToken = await pickTargetToken(shift.to_narrative);
   if (targetToken === 'USDC') {
     console.log(`Market rotated to a defensive stablecoin narrative (${toName}). No buy order triggered.`);
     return;
@@ -309,11 +330,13 @@ export async function checkMarketAndTrade(precomputedTemps) {
   // Execute buy order on SoDEX
   let orderResult;
   try {
+    // Spending a USDC amount keeps the cost exact even when the reference price is off the book
     orderResult = await placeOrder({
       pair: `${targetToken}-USDC`,
       side: 'BUY',
       orderType: 'MARKET',
       quantity: targetQty,
+      funds: sizeUSD.toFixed(2),
       price: '0.00'
     });
   } catch (err) {

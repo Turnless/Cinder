@@ -139,11 +139,20 @@ export async function batch(statements) {
   }
 }
 
+// Concurrent callers in one process share a single migration run
+let migrationRun = null;
+
 /**
- * Runs migration scripts to set up schemas if they do not exist.
+ * Runs migration scripts to set up schemas if they do not exist. Runs once per process;
+ * later calls wait for that run instead of applying the same statements again.
  * @returns {Promise<void>}
  */
-export async function initializeDb() {
+export function initializeDb() {
+  if (!migrationRun) migrationRun = runMigrations();
+  return migrationRun;
+}
+
+async function runMigrations() {
   try {
     const migrationsDir = path.join(process.cwd(), 'migrations');
     if (!fs.existsSync(migrationsDir)) {
