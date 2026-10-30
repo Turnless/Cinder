@@ -198,6 +198,13 @@
   border-color: var(--color-sage);
 }
 
+a.hd-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 .hd-button-primary {
   border-color: var(--color-wire-gold);
   color: var(--color-wire-gold);

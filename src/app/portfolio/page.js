@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { ethers } from 'ethers';
 import { useRouter } from 'next/navigation';
@@ -9,16 +9,22 @@ import Footer from '../../components/shared/Footer';
 import PortfolioView from '../../components/trading/PortfolioView';
 import TradeHistory from '../../components/trading/TradeHistory';
 import QuickTrade from '../../components/trading/QuickTrade';
+import OpenOrders from '../../components/trading/OpenOrders';
 import { useWallet } from '../../context/WalletContext';
 import { buildTelegramLinkMessage } from '../../lib/telegram-link';
+import { getSpotSymbols, getSpotTicker, getSpotOpenOrders, getSpotTrades } from '../../lib/sodex-browser';
+import { tradableMarkets, marketForCoin, availableOf, isCashCoin, coinLabel } from '../../lib/sodex-orders';
 import '../../styles/portfolio-page.css';
 
 const formatAmount = (n) => parseFloat(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function PortfolioPage() {
-  const { isConnected, walletAddress, balance: cndrBalance, isDemoBalance, walletChecked } = useWallet();
+  const { isConnected, walletAddress, walletChecked, network, account, refreshAccount } = useWallet();
   const router = useRouter();
-  const [tradeData, setTradeData] = useState({ positions: [], trades: [] });
+  const [symbols, setSymbols] = useState([]);
+  const [prices, setPrices] = useState({});
+  const [openOrders, setOpenOrders] = useState([]);
+  const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [isTelegramLoading, setIsTelegramLoading] = useState(false);
@@ -67,24 +73,72 @@ export default function PortfolioPage() {
     }
   }, [isConnected, walletChecked, router]);
 
+  useEffect(() => {
+    let active = true;
+    getSpotSymbols(network)
+      .then(result => active && result.ok && setSymbols(tradableMarkets(result.json.data)))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [network]);
+
+  const accountID = account.accountID;
   const fetchPortfolioData = useCallback(async () => {
-    if (!walletAddress) return;
+    if (!walletAddress || !accountID) return;
     try {
-      const tradeRes = await fetch(`/api/trade?address=${walletAddress}`);
-      const tradeJson = await tradeRes.json();
-      if (tradeJson.success) {
-        setTradeData(tradeJson);
-        setLoadError(false);
-      } else {
-        setLoadError(true);
-      }
+      const [ordersRes, tradesRes] = await Promise.all([
+        getSpotOpenOrders(walletAddress, accountID, null, network),
+        getSpotTrades(walletAddress, accountID, 50, network)
+      ]);
+      setOpenOrders(ordersRes.ok ? ordersRes.json.data?.orders || [] : []);
+      setTrades(tradesRes.ok && Array.isArray(tradesRes.json.data) ? tradesRes.json.data : []);
+      setLoadError(!ordersRes.ok || !tradesRes.ok);
     } catch (e) {
       console.error('Error fetching portfolio page data:', e);
       setLoadError(true);
     } finally {
       setLoading(false);
     }
-  }, [walletAddress]);
+  }, [walletAddress, accountID, network]);
+
+  // Coins held on SoDEX, with the USDC market each one trades on
+  const holdings = useMemo(() => account.balances
+    .filter(b => !isCashCoin(b.coin) && parseFloat(b.total) > 0)
+    .map(b => {
+      const symbol = marketForCoin(symbols, b.coin);
+      const price = symbol ? prices[symbol.name] ?? null : null;
+      const total = parseFloat(b.total);
+      return {
+        coin: b.coin,
+        label: coinLabel(b.coin),
+        total,
+        available: availableOf(account.balances, b.coin),
+        symbol,
+        price,
+        value: price !== null ? total * price : null
+      };
+    }), [account.balances, symbols, prices]);
+
+  // Last prices for the markets of held coins, refreshed whenever the balances are
+  const heldMarkets = holdings.map(h => h.symbol?.name).filter(Boolean).join(',');
+  useEffect(() => {
+    if (!heldMarkets) return undefined;
+    let active = true;
+    Promise.all(heldMarkets.split(',').map(async name => {
+      const ticker = await getSpotTicker(name, network).catch(() => null);
+      const last = parseFloat(ticker?.json?.data?.[0]?.lastPx);
+      return [name, last > 0 ? last : null];
+    })).then(entries => active && setPrices(Object.fromEntries(entries)));
+    return () => {
+      active = false;
+    };
+  }, [heldMarkets, network, account.balances]);
+
+  const refreshAll = useCallback(() => {
+    refreshAccount();
+    fetchPortfolioData();
+  }, [refreshAccount, fetchPortfolioData]);
 
   const checkTelegramStatus = useCallback(async () => {
     if (!walletAddress) return;
@@ -98,28 +152,31 @@ export default function PortfolioPage() {
   }, [walletAddress]);
 
   useEffect(() => {
-    if (!isConnected) return;
-    fetchPortfolioData();
+    if (!isConnected) return undefined;
     checkTelegramStatus();
+    const interval = setInterval(checkTelegramStatus, 30000);
+    return () => clearInterval(interval);
+  }, [isConnected, checkTelegramStatus]);
+
+  useEffect(() => {
+    if (!accountID) return undefined;
+    fetchPortfolioData();
     const interval = setInterval(() => {
+      refreshAccount();
       fetchPortfolioData();
-      checkTelegramStatus();
     }, 30000);
     return () => clearInterval(interval);
-    // cndrBalance: refetch when the CNDR balance changes (e.g. after a faucet claim)
-  }, [isConnected, fetchPortfolioData, checkTelegramStatus, cndrBalance]);
+  }, [accountID, fetchPortfolioData, refreshAccount]);
 
   if (!walletChecked || !isConnected) {
     return <main className="pf-page" />;
   }
 
-  const positions = tradeData.positions || [];
-  const positionsValue = positions.reduce((sum, p) => sum + parseFloat(p.value || 0), 0);
-  // Size-weighted: total value against what the positions cost
-  const positionsCost = positions.reduce((sum, p) => sum + parseFloat(p.quantity || 0) * parseFloat(p.entryPrice || 0), 0);
-  const positionsReturn = positionsCost > 0 ? ((positionsValue - positionsCost) / positionsCost) * 100 : null;
-  const cash = parseFloat(cndrBalance || 0);
-  const total = cash + positionsValue;
+  const usdcTotal = parseFloat(account.balances.find(b => isCashCoin(b.coin))?.total || 0);
+  const holdingsValue = holdings.reduce((sum, h) => sum + (h.value || 0), 0);
+  const unpriced = holdings.some(h => h.value === null);
+  const total = usdcTotal + holdingsValue;
+  const accountReady = account.status === 'ready';
 
   return (
     <main className="pf-page">
@@ -129,52 +186,67 @@ export default function PortfolioPage() {
         <header className="pf-head">
           <h1 className="pf-title">Portfolio</h1>
           <p className="pf-intro">
-            Your CNDR, the positions you have bought with it, and every trade placed from this wallet.
+            Your {network.label} account: the USDC and coins it holds, open orders and every fill.
           </p>
         </header>
 
-        <dl className="pf-summary" aria-busy={loading}>
+        {account.status === 'missing' && (
+          <p className="pf-message" role="status">
+            This wallet has no {network.label} account yet.{' '}
+            <a className="pf-link" href={network.appUrl} target="_blank" rel="noreferrer">Open SoDEX</a> with this
+            wallet to create one and add USDC.
+          </p>
+        )}
+
+        <dl className="pf-summary" aria-busy={!accountReady}>
           <div>
             <dt>Total value</dt>
-            <dd className="pf-summary-total">{formatAmount(total)} <span>CNDR</span></dd>
-          </div>
-          <div>
-            <dt>{isDemoBalance ? 'CNDR available (demo balance)' : 'CNDR in your wallet'}</dt>
-            <dd>{formatAmount(cash)}</dd>
-          </div>
-          <div>
-            <dt>In positions</dt>
-            <dd>{formatAmount(positionsValue)}</dd>
-          </div>
-          <div>
-            <dt>Return on positions</dt>
-            <dd className={positionsReturn > 0 ? 'is-up' : positionsReturn < 0 ? 'is-down' : undefined}>
-              {positionsReturn === null
-                ? 'No positions'
-                : `${positionsReturn > 0 ? '+' : positionsReturn < 0 ? '−' : ''}${Math.abs(positionsReturn).toFixed(2)}%`}
+            <dd className="pf-summary-total">
+              {accountReady ? formatAmount(total) : '-'} <span>USDC</span>
             </dd>
+          </div>
+          <div>
+            <dt>USDC available</dt>
+            <dd>{accountReady ? formatAmount(account.usdc) : '-'}</dd>
+          </div>
+          <div>
+            <dt>{unpriced ? 'In coins (priced ones)' : 'In coins'}</dt>
+            <dd>{accountReady ? formatAmount(holdingsValue) : '-'}</dd>
+          </div>
+          <div>
+            <dt>Open orders</dt>
+            <dd>{accountReady ? openOrders.length : '-'}</dd>
           </div>
         </dl>
 
+        {account.status === 'error' && (
+          <p className="pf-message is-error" role="alert">
+            Your {network.label} account could not be loaded: {account.error}
+          </p>
+        )}
+
         {loadError && (
           <p className="pf-message is-error" role="alert">
-            Your positions and trades could not be loaded. The page retries every 30 seconds.
+            Your open orders and trades could not be loaded. The page retries every 30 seconds.
           </p>
         )}
 
         <div className="pf-layout">
           <div className="pf-main">
             <section className="pf-section" aria-labelledby="pf-positions-title">
-              <h2 id="pf-positions-title" className="pf-section-title">Positions</h2>
-              <p className="pf-section-intro">
-                Prices are in USDC; 1 CNDR is treated as 1 USDC when you buy or sell.
-              </p>
-              {loading ? <div className="pf-skeleton" /> : <PortfolioView positions={positions} onTradeSuccess={fetchPortfolioData} />}
+              <h2 id="pf-positions-title" className="pf-section-title">Coins</h2>
+              <p className="pf-section-intro">Valued at the last price on SoDEX.</p>
+              {!accountReady ? <div className="pf-skeleton" /> : <PortfolioView holdings={holdings} onTradeSuccess={refreshAll} />}
+            </section>
+
+            <section className="pf-section" aria-labelledby="pf-orders-title">
+              <h2 id="pf-orders-title" className="pf-section-title">Open orders</h2>
+              {loading && accountReady ? <div className="pf-skeleton" /> : <OpenOrders orders={openOrders} symbols={symbols} onChange={refreshAll} />}
             </section>
 
             <section className="pf-section" aria-labelledby="pf-history-title">
               <h2 id="pf-history-title" className="pf-section-title">Trades</h2>
-              {loading ? <div className="pf-skeleton" /> : <TradeHistory trades={tradeData.trades || []} />}
+              {loading && accountReady ? <div className="pf-skeleton" /> : <TradeHistory trades={trades} symbols={symbols} />}
             </section>
           </div>
 
@@ -210,7 +282,8 @@ export default function PortfolioPage() {
             </section>
 
             <p className="pf-rail-note">
-              Automatic trades follow the limits on the <Link href="/dashboard" className="pf-link">narratives dashboard</Link>.
+              Cinder&apos;s automatic trades run on its own account, never yours. Follow them on the{' '}
+              <Link href="/dashboard" className="pf-link">narratives dashboard</Link>.
             </p>
           </aside>
         </div>

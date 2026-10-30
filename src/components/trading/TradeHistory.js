@@ -1,68 +1,52 @@
 'use client';
 
-import Link from 'next/link';
-
-const STATUS_LABELS = {
-  filled: 'Filled',
-  simulated: 'Simulated',
-  stopped: 'Stopped out',
-  closed: 'Closed',
-  cancelled: 'Cancelled',
-  new: 'Pending',
-  pending: 'Pending'
-};
+import { marketLabels } from '../../lib/sodex-orders';
 
 const formatAmount = (n) => parseFloat(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const formatQuantity = (n) => parseFloat(n || 0).toLocaleString(undefined, { maximumFractionDigits: 6 });
+const formatQuantity = (n) => parseFloat(n || 0).toLocaleString(undefined, { maximumFractionDigits: 8 });
 
-// SQLite datetime('now') values carry no zone but are UTC
-function parseTime(value) {
-  if (!value) return null;
-  const hasZone = /(Z|[+-]\d{2}:?\d{2})$/i.test(String(value).trim());
-  const date = new Date(hasZone ? value : String(value).trim().replace(' ', 'T') + 'Z');
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function formatTime(value) {
-  const date = parseTime(value);
-  if (!date) return '';
+function formatTime(ms) {
+  const date = new Date(Number(ms));
+  if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 /**
- * Every trade for this wallet, newest first.
- * @param {{trades: Array}} props
+ * Fills on the user's SoDEX account, newest first.
+ * @param {{trades: Array, symbols: Array}} props - trades as SoDEX returns them (UserTrade)
  */
-export default function TradeHistory({ trades = [] }) {
+export default function TradeHistory({ trades = [], symbols = [] }) {
   if (trades.length === 0) {
-    return <p className="pf-message">No trades yet. Your orders and any automatic trades for this wallet appear here.</p>;
+    return <p className="pf-message">No trades yet. Your fills on SoDEX appear here.</p>;
   }
 
   return (
     <ol className="pf-history">
-      {trades.map((trade, idx) => {
-        const isBuy = String(trade.side).toLowerCase() === 'buy';
-        const asset = String(trade.pair || '').split('-')[0];
-        const status = String(trade.status || '').toLowerCase();
+      {trades.map((trade) => {
+        const isBuy = String(trade.side).toUpperCase() === 'BUY';
+        const symbol = symbols.find(s => s.name === trade.symbol);
+        const { base, quote } = symbol ? marketLabels(symbol) : { base: trade.symbol, quote: 'USDC' };
+        const fee = parseFloat(trade.fee || 0);
+        const builderFee = parseFloat(trade.builderFee || 0);
+        const date = new Date(Number(trade.time));
 
         return (
-          <li key={trade.id || idx} className="pf-history-row">
-            <time className="pf-history-time" dateTime={parseTime(trade.created_at)?.toISOString()}>
-              {formatTime(trade.created_at)}
+          <li key={trade.tradeID} className="pf-history-row">
+            <time className="pf-history-time" dateTime={Number.isNaN(date.getTime()) ? undefined : date.toISOString()}>
+              {formatTime(trade.time)}
             </time>
             <div className="pf-history-main">
               <p className="pf-history-title">
-                {isBuy ? 'Bought' : 'Sold'} {formatQuantity(trade.quantity)} {asset}
-                {trade.fill_price ? ` at $${formatAmount(trade.fill_price)}` : ''}
+                {isBuy ? 'Bought' : 'Sold'} {formatQuantity(trade.quantity)} {base} at {formatAmount(trade.price)} {quote}
               </p>
               <p className="pf-history-meta">
-                <span className={`pf-status is-${status}`}>{STATUS_LABELS[status] || status}</span>
-                {isBuy && trade.stop_loss_price && status === 'filled' && (
-                  <span>Stop-loss at ${formatAmount(trade.stop_loss_price)}</span>
+                <span>{isBuy ? 'Paid' : 'Received'} {formatAmount(parseFloat(trade.price) * parseFloat(trade.quantity))} {quote}</span>
+                {fee > 0 && (
+                  <span>
+                    Fees {formatQuantity(fee)} {String(trade.feeCoin || '').replace(/^v(?=[A-Z])/, '')}
+                    {builderFee > 0 ? `, of which Cinder ${formatQuantity(builderFee)}` : ''}
+                  </span>
                 )}
-                {trade.story_id
-                  ? <Link href={`/story/${trade.story_id}`} className="pf-link">Read the story behind it</Link>
-                  : <span>Placed by you</span>}
               </p>
             </div>
           </li>

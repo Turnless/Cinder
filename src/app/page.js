@@ -11,7 +11,7 @@ import { getRelativeTimeString as timeAgo, getTypeBadgeLabel } from '../componen
 import '../styles/landing.css';
 
 export default function HomePage() {
-  const { isConnected, walletChecked, connectWallet, isConnecting } = useWallet();
+  const { isConnected, walletChecked, connectWallet, isConnecting, network } = useWallet();
   const router = useRouter();
 
   const narrative = useNarrative();
@@ -124,7 +124,8 @@ export default function HomePage() {
               <span className="landing-step-number" aria-hidden="true">4</span>
               <h3 className="landing-step-title">Publish, then trade</h3>
               <p className="landing-step-text">
-                The breaking story goes out, then the order is placed on SoDEX testnet within the limits below.
+                The breaking story goes out, then Cinder places the order from its own account on {network.label},
+                within the limits below.
               </p>
             </li>
           </ol>
@@ -181,7 +182,10 @@ export default function HomePage() {
             <button type="button" className="landing-button" onClick={connectWallet} disabled={isConnecting}>
               {isConnecting ? 'Waiting for your wallet' : 'Connect wallet to read'}
             </button>
-            <p>Uses the wallet installed in your browser, such as MetaMask or Rabby, on Arbitrum Sepolia.</p>
+            <p>
+              Uses the wallet installed in your browser, such as MetaMask or Rabby. To trade yourself, the same
+              wallet needs a {network.label} account with USDC.
+            </p>
           </div>
         </div>
       </section>

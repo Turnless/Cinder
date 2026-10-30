@@ -1,0 +1,171 @@
+/* ============================================================
+   Trading check: testnet walkthrough of user trading on SoDEX
+   ============================================================ */
+
+.tc-page {
+  background-color: var(--color-obsidian);
+  color: var(--color-linen);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.tc-wrap {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+
+.tc-page :focus-visible {
+  outline: 2px solid var(--color-wire-gold);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.tc-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  letter-spacing: -0.015em;
+}
+
+.tc-lede {
+  margin-top: 12px;
+  max-width: 40rem;
+  font-size: 1.02rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.tc-step {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--rule);
+}
+
+.tc-step-title {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.2rem;
+}
+
+.tc-step-number {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--color-wire-gold);
+}
+
+.tc-step-body {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.tc-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.tc-label {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.tc-select {
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--color-iron);
+  border-radius: 8px;
+  background-color: var(--color-obsidian);
+  color: var(--color-linen);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.tc-button {
+  height: 38px;
+  padding: 0 16px;
+  border: 1px solid var(--color-wire-gold);
+  border-radius: 8px;
+  background: none;
+  color: var(--color-wire-gold);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.tc-button:hover:not(:disabled) {
+  background-color: rgba(212, 168, 83, 0.08);
+}
+
+.tc-button:disabled {
+  border-color: var(--color-iron);
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.tc-button-quiet {
+  border-color: var(--color-iron);
+  color: var(--color-linen);
+}
+
+.tc-note {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.tc-log {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.tc-log-item {
+  padding-left: 12px;
+  border-left: 2px solid var(--color-sage);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.tc-log-item.is-error {
+  border-left-color: var(--color-shift-red);
+}
+
+.tc-log-item details {
+  margin-top: 4px;
+}
+
+.tc-log-item summary {
+  font-size: 0.82rem;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.tc-log-item pre {
+  margin-top: 6px;
+  padding: 10px;
+  max-height: 260px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  background-color: rgba(60, 61, 55, 0.25);
+  border-radius: 6px;
+}
+
+@media (max-width: 560px) {
+  .tc-wrap {
+    padding-top: 32px;
+  }
+}

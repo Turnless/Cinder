@@ -1,111 +1,67 @@
 'use client';
 
 import { Fragment, useState } from 'react';
-import { ethers } from 'ethers';
 import { useWallet } from '../../context/WalletContext';
+import { placeSpotOrder, newClientOrderId } from '../../lib/sodex-browser';
+import { prepareSpotOrder, batchError, formatFeeRate } from '../../lib/sodex-orders';
 
 const formatAmount = (n) => parseFloat(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const formatQuantity = (n) => parseFloat(n || 0).toLocaleString(undefined, { maximumFractionDigits: 6 });
+const formatQuantity = (n) => parseFloat(n || 0).toLocaleString(undefined, { maximumFractionDigits: 8 });
 
 /**
- * Open positions with their stop-loss and a two-step "Sell all" per position.
- * @param {{positions: Array, onTradeSuccess?: Function}} props
+ * Coins held on SoDEX, valued at the last price, with a two-step "Sell all" per coin.
+ * @param {{holdings: Array<{coin: string, label: string, total: number, available: number,
+ *   symbol?: Object, price: number|null, value: number|null}>, onTradeSuccess?: Function}} props
  */
-export default function PortfolioView({ positions = [], onTradeSuccess }) {
-  const { walletAddress, ensureCorrectNetwork } = useWallet();
+export default function PortfolioView({ holdings = [], onTradeSuccess }) {
+  const { network, builder, tradingKey, tradingReady } = useWallet();
   const [confirming, setConfirming] = useState(null);
   const [selling, setSelling] = useState(null);
   const [message, setMessage] = useState(null);
 
-  const handleClosePosition = async (pos) => {
+  const handleSellAll = async (holding) => {
     setConfirming(null);
     setMessage(null);
-    if (!walletAddress) {
-      setMessage({ asset: pos.asset, error: true, text: 'Connect your wallet to sell.' });
+    if (!tradingReady) {
+      setMessage({ coin: holding.coin, error: true, text: 'Enable trading in the trade panel first.' });
       return;
     }
 
-    setSelling(pos.asset);
+    const draft = prepareSpotOrder({
+      symbol: holding.symbol,
+      side: 'sell',
+      type: 'market',
+      amount: holding.available,
+      lastPrice: holding.price
+    });
+    if (!draft.ok) {
+      setMessage({ coin: holding.coin, error: true, text: draft.error });
+      return;
+    }
+
+    setSelling(holding.coin);
     try {
-      // The server verifies signatures against Arbitrum Sepolia; switch before creating the provider
-      if (ensureCorrectNetwork && !(await ensureCorrectNetwork())) {
-        throw new Error('Switch your wallet to Arbitrum Sepolia to sell.');
-      }
-
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const signer = provider.getSigner();
-      const network = await provider.getNetwork();
-
-      const orderParams = {
-        pair: `${pos.asset}-USDC`,
-        side: 'sell',
-        orderType: 'market',
-        quantity: String(pos.quantity),
-        price: String(pos.currentPrice),
-        stopPrice: '0.0'
-      };
-
-      const domain = {
-        name: 'spot',
-        version: '1',
-        chainId: network.chainId,
-        verifyingContract: '0x0000000000000000000000000000000000000000'
-      };
-
-      const types = {
-        ExchangeAction: [
-          { name: 'payloadHash', type: 'bytes32' },
-          { name: 'nonce', type: 'uint64' }
-        ]
-      };
-
-      const payloadJson = JSON.stringify({ type: 'newOrder', params: orderParams });
-      const payloadHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(payloadJson));
-      const nonce = Date.now();
-      const signature = await signer._signTypedData(domain, types, { payloadHash, nonce });
-
-      const response = await fetch('/api/trade', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          pair: `${pos.asset}-USDC`,
-          side: 'sell',
-          orderType: 'market',
-          quantity: pos.quantity,
-          price: pos.currentPrice,
-          clientWallet: walletAddress,
-          signature,
-          nonce
-        }),
+      const result = await placeSpotOrder({
+        key: tradingKey,
+        order: { symbolID: holding.symbol.id, clOrdID: newClientOrderId('s'), ...draft.order },
+        builder: builder ? { id: builder.id, fee: builder.fee } : null,
+        network
       });
-
-      const data = await response.json();
-      if (data.success) {
-        setMessage({
-          asset: pos.asset,
-          text: data.simulated
-            ? `Sold ${pos.asset} (simulated at $${formatAmount(data.fillPrice)}).`
-            : `Sold ${pos.asset} at $${formatAmount(data.fillPrice)}.`
-        });
-        if (onTradeSuccess) onTradeSuccess();
-      } else {
-        setMessage({ asset: pos.asset, error: true, text: data.error || 'The sell order was rejected.' });
-      }
-    } catch (e) {
-      console.error(e);
-      const rejected = e.code === 'ACTION_REJECTED' || e.code === 4001;
-      setMessage({ asset: pos.asset, error: true, text: rejected ? 'You declined the signature, so nothing was sold.' : e.message });
+      const error = batchError(result);
+      if (error) throw new Error(error);
+      setMessage({ coin: holding.coin, text: `Sell order for ${draft.order.quantity} ${holding.label} sent to SoDEX.` });
+      if (onTradeSuccess) setTimeout(onTradeSuccess, 1500);
+    } catch (err) {
+      setMessage({ coin: holding.coin, error: true, text: `SoDEX refused the sale: ${err.message}` });
     } finally {
       setSelling(null);
     }
   };
 
-  if (positions.length === 0) {
+  if (holdings.length === 0) {
     return (
       <p className="pf-message">
-        No open positions. Use the trade form to buy; your CNDR pays for it.
+        No coins on your {network.label} account yet. Buy with the trade form; your USDC pays for it.
       </p>
     );
   }
@@ -116,76 +72,67 @@ export default function PortfolioView({ positions = [], onTradeSuccess }) {
         <thead>
           <tr>
             <th scope="col">Asset</th>
-            <th scope="col" className="is-number">Bought at</th>
-            <th scope="col" className="is-number">Now</th>
-            <th scope="col" className="is-number">Value, CNDR</th>
-            <th scope="col" className="is-number">Return</th>
-            <th scope="col" className="is-number">Stop-loss</th>
+            <th scope="col" className="is-number">Amount</th>
+            <th scope="col" className="is-number">Price, USDC</th>
+            <th scope="col" className="is-number">Value, USDC</th>
             <th scope="col"><span className="pf-visually-hidden">Actions</span></th>
           </tr>
         </thead>
         <tbody>
-          {positions.map((pos) => {
-            const pnl = parseFloat(pos.return || 0);
-            const current = parseFloat(pos.currentPrice || 0);
-            const stop = parseFloat(pos.stopLoss || 0);
-            const distance = current > 0 && stop > 0 ? ((current - stop) / current) * 100 : null;
-            const rowMessage = message?.asset === pos.asset ? message : null;
+          {holdings.map((holding) => {
+            const rowMessage = message?.coin === holding.coin ? message : null;
+            const locked = holding.total - holding.available;
 
             return (
-              <Fragment key={pos.asset}>
-              <tr className={rowMessage ? 'has-message' : undefined}>
-                <th scope="row">
-                  {pos.asset}
-                  <span className="pf-sub pf-qty">{formatQuantity(pos.quantity)} held</span>
-                </th>
-                <td className="is-number">${formatAmount(pos.entryPrice)}</td>
-                <td className="is-number">${formatAmount(pos.currentPrice)}</td>
-                <td className="is-number pf-strong">{formatAmount(pos.value)}</td>
-                <td className={`is-number ${pnl > 0 ? 'is-up' : pnl < 0 ? 'is-down' : ''}`}>
-                  {pnl > 0 ? '+' : pnl < 0 ? '−' : ''}{Math.abs(pnl).toFixed(2)}%
-                </td>
-                <td className="is-number">
-                  {stop > 0 ? (
-                    <>
-                      ${formatAmount(stop)}
-                      {distance !== null && (
-                        <span className="pf-sub">
-                          {distance >= 0 ? `${distance.toFixed(1)}% below` : 'above the price'}
-                        </span>
-                      )}
-                    </>
-                  ) : 'None'}
-                </td>
-                <td className="pf-action">
-                  {confirming === pos.asset ? (
-                    <span className="pf-confirm">
-                      <button type="button" className="pf-sell is-confirm" onClick={() => handleClosePosition(pos)}>
-                        Sell all {pos.asset}
+              <Fragment key={holding.coin}>
+                <tr className={rowMessage ? 'has-message' : undefined}>
+                  <th scope="row">{holding.label}</th>
+                  <td className="is-number">
+                    {formatQuantity(holding.total)}
+                    {locked > 0 && <span className="pf-sub">{formatQuantity(locked)} in open orders</span>}
+                  </td>
+                  <td className="is-number">{holding.price ? formatAmount(holding.price) : 'No price'}</td>
+                  <td className="is-number pf-strong">{holding.value !== null ? formatAmount(holding.value) : 'Unknown'}</td>
+                  <td className="pf-action">
+                    {!holding.symbol ? (
+                      <span className="pf-sub">No USDC market</span>
+                    ) : confirming === holding.coin ? (
+                      <span className="pf-confirm">
+                        <button type="button" className="pf-sell is-confirm" onClick={() => handleSellAll(holding)}>
+                          Sell all {holding.label}
+                        </button>
+                        <button type="button" className="pf-cancel" onClick={() => setConfirming(null)}>Keep</button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="pf-sell"
+                        disabled={selling === holding.coin || holding.available <= 0}
+                        onClick={() => { setMessage(null); setConfirming(holding.coin); }}
+                      >
+                        {selling === holding.coin ? 'Selling' : 'Sell'}
                       </button>
-                      <button type="button" className="pf-cancel" onClick={() => setConfirming(null)}>Keep</button>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="pf-sell"
-                      disabled={selling === pos.asset}
-                      onClick={() => { setMessage(null); setConfirming(pos.asset); }}
-                    >
-                      {selling === pos.asset ? 'Selling' : 'Sell'}
-                    </button>
-                  )}
-                </td>
-              </tr>
-              {rowMessage && (
-                <tr className="pf-message-row">
-                  <td colSpan={7}>
-                    <span className={`pf-row-message${rowMessage.error ? ' is-error' : ''}`} role={rowMessage.error ? 'alert' : 'status'}>
-                      {rowMessage.text}
-                    </span>
+                    )}
                   </td>
                 </tr>
-              )}
+                {confirming === holding.coin && builder && (
+                  <tr className="pf-message-row">
+                    <td colSpan={5}>
+                      <span className="pf-row-message">
+                        Sells at the market price. Cinder&apos;s fee is {formatFeeRate(builder.fee)} of the sale.
+                      </span>
+                    </td>
+                  </tr>
+                )}
+                {rowMessage && (
+                  <tr className="pf-message-row">
+                    <td colSpan={5}>
+                      <span className={`pf-row-message${rowMessage.error ? ' is-error' : ''}`} role={rowMessage.error ? 'alert' : 'status'}>
+                        {rowMessage.text}
+                      </span>
+                    </td>
+                  </tr>
+                )}
               </Fragment>
             );
           })}

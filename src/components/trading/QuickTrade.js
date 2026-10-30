@@ -1,268 +1,242 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ethers } from 'ethers';
 import { useWallet } from '../../context/WalletContext';
+import { getSpotSymbols, getSpotTicker, placeSpotOrder, newClientOrderId } from '../../lib/sodex-browser';
+import {
+  tradableMarkets,
+  marketLabels,
+  availableOf,
+  prepareSpotOrder,
+  batchError,
+  formatFeeRate
+} from '../../lib/sodex-orders';
 import '../../styles/portfolio-page.css';
 
-export default function QuickTrade({ onTradeSuccess }) {
-  // Global Web3 Wallet Context
-  const { walletAddress: globalWalletAddress, connectWallet: globalConnect, isConnecting: globalConnecting, ensureCorrectNetwork } = useWallet();
+const DEFAULT_MARKET = 'vBTC_vUSDC';
 
-  // Order params
-  const [pair, setPair] = useState('BTC-USDC');
-  const [side, setSide] = useState('buy');
-  const [orderType, setOrderType] = useState('market');
-  const [quantity, setQuantity] = useState('');
-  const [price, setPrice] = useState('');
-  const [stopLossPercentage, setStopLossPercentage] = useState(8);
-  const [useStopLoss, setUseStopLoss] = useState(true);
+const formatAmount = (n) => parseFloat(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const formatQuantity = (n) => parseFloat(n || 0).toLocaleString(undefined, { maximumFractionDigits: 8 });
 
-  // Flow control states
-  const [step, setStep] = useState('input'); // 'input', 'review', 'signing', 'success', 'error'
-  const [localWalletAddress, setLocalWalletAddress] = useState('');
-  const [isLocalConnecting, setIsLocalConnecting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [formError, setFormError] = useState('');
-  const [executionResult, setExecutionResult] = useState(null);
-  const [loading, setLoading] = useState(false);
+/**
+ * Asks the wallet for the approvals trading needs: a trading key for this browser and,
+ * when Cinder charges a builder fee, approval of that fee.
+ */
+function EnableTrading() {
+  const { network, builder, account, tradingKey, enableTrading } = useWallet();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
-  // Live Price feed state
-  const [livePrice, setLivePrice] = useState(null);
-  const [fetchingPrice, setFetchingPrice] = useState(false);
+  const needsKey = !tradingKey;
+  const needsFee = Boolean(builder) && account.builderFee < builder.fee;
+  const signatures = Number(needsKey) + Number(needsFee);
 
-  const activeWalletAddress = globalWalletAddress || localWalletAddress;
-  const isConnecting = globalConnecting || isLocalConnecting;
-
-  // Poll for the live price of the selected pair
-  useEffect(() => {
-    let isMounted = true;
-    const fetchLivePrice = async () => {
-      if (!isMounted) return;
-      setFetchingPrice(true);
-      try {
-        const res = await fetch(`/api/trade?ticker=${pair}`);
-        const data = await res.json();
-        if (data.success && isMounted) {
-          setLivePrice(data.price);
-          // If orderType is market, automatically fill the price field for EIP-712 hashing
-          if (orderType === 'market') {
-            setPrice(data.price);
-          }
-        }
-      } catch (err) {
-        console.error('[ERROR] Failed to fetch live price in QuickTrade:', err);
-      } finally {
-        if (isMounted) setFetchingPrice(false);
-      }
-    };
-
-    fetchLivePrice();
-    const interval = setInterval(fetchLivePrice, 10000); // refresh every 10s
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, [pair, orderType]);
-
-  const handleConnectWallet = async () => {
-    if (globalConnect) {
-      await globalConnect();
-      return;
-    }
-    
-    if (typeof window === 'undefined' || !window.ethereum) {
-      alert('MetaMask or another EVM wallet was not detected in this browser.');
-      return;
-    }
-    setIsLocalConnecting(true);
-    try {
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const accounts = await provider.send('eth_requestAccounts', []);
-      setLocalWalletAddress(accounts[0]);
-    } catch (e) {
-      console.error(e);
-      alert('Failed to connect wallet: ' + e.message);
-    } finally {
-      setIsLocalConnecting(false);
-    }
+  const handleEnable = async () => {
+    setBusy(true);
+    setError('');
+    const result = await enableTrading();
+    if (!result.ok) setError(result.error);
+    setBusy(false);
   };
 
-  const handleReviewOrder = () => {
-    if (!quantity || parseFloat(quantity) <= 0) {
-      setFormError('Enter a quantity above 0.');
+  return (
+    <div className="qt-form">
+      <h3 className="qt-subtitle">Enable trading</h3>
+      <p className="qt-note">
+        {signatures === 1
+          ? 'Your wallet signs one request. It costs no gas.'
+          : `Your wallet signs ${signatures} requests. Neither costs gas.`}
+      </p>
+      <ul className="qt-list">
+        {needsKey && (
+          <li>
+            A trading key kept in this browser. It places and cancels orders on your {network.label} account
+            for 7 days and can never withdraw or move your funds.
+          </li>
+        )}
+        {needsFee && (
+          <li>
+            Cinder&apos;s fee of {formatFeeRate(builder.fee)} on each sale, paid from the sale in USDC. Buys carry no
+            Cinder fee. You can withdraw this approval on SoDEX at any time.
+          </li>
+        )}
+      </ul>
+      {error && <p className="qt-error" role="alert">{error}</p>}
+      <button type="button" className="qt-primary" onClick={handleEnable} disabled={busy}>
+        {busy ? 'Waiting for your wallet' : 'Enable trading'}
+      </button>
+    </div>
+  );
+}
+
+export default function QuickTrade({ onTradeSuccess }) {
+  const { network, builder, account, tradingKey, tradingReady, refreshAccount } = useWallet();
+
+  const [symbols, setSymbols] = useState([]);
+  const [marketsError, setMarketsError] = useState('');
+  const [marketName, setMarketName] = useState(DEFAULT_MARKET);
+  const [side, setSide] = useState('buy');
+  const [orderType, setOrderType] = useState('market');
+  const [amount, setAmount] = useState('');
+  const [price, setPrice] = useState('');
+  const [lastPrice, setLastPrice] = useState(null);
+  const [priceLoading, setPriceLoading] = useState(true);
+
+  const [step, setStep] = useState('input'); // 'input', 'review', 'placing', 'done', 'error'
+  const [prepared, setPrepared] = useState(null);
+  const [formError, setFormError] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [placedId, setPlacedId] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    getSpotSymbols(network)
+      .then((result) => {
+        if (!active) return;
+        if (result.ok) {
+          setSymbols(tradableMarkets(result.json.data));
+        } else {
+          setMarketsError(result.error);
+        }
+      })
+      .catch(err => active && setMarketsError(err.message));
+    return () => {
+      active = false;
+    };
+  }, [network]);
+
+  const symbol = symbols.find(s => s.name === marketName) || symbols[0];
+  const symbolName = symbol?.name;
+
+  // Last traded price of the selected market, refreshed every 10 seconds
+  useEffect(() => {
+    if (!symbolName) return undefined;
+    let active = true;
+    setLastPrice(null);
+    setPriceLoading(true);
+    const load = async () => {
+      try {
+        const ticker = await getSpotTicker(symbolName, network);
+        const last = parseFloat(ticker.json?.data?.[0]?.lastPx);
+        if (active) setLastPrice(ticker.ok && last > 0 ? last : null);
+      } catch {
+        if (active) setLastPrice(null);
+      } finally {
+        if (active) setPriceLoading(false);
+      }
+    };
+    load();
+    const interval = setInterval(load, 10000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [symbolName, network]);
+
+  const { base, quote } = symbol ? marketLabels(symbol) : { base: '', quote: 'USDC' };
+  const spendsQuote = side === 'buy' && orderType === 'market';
+  const available = side === 'buy' ? account.usdc : availableOf(account.balances, symbol?.baseCoin);
+  const chargesFee = Boolean(builder) && side === 'sell';
+
+  const draft = symbol
+    ? prepareSpotOrder({ symbol, side, type: orderType, amount, price, lastPrice })
+    : null;
+
+  const handleReview = () => {
+    if (!draft?.ok) {
+      setFormError(draft?.error || 'Pick a market.');
       return;
     }
-    if (orderType === 'limit' && (!price || parseFloat(price) <= 0)) {
-      setFormError('Enter a limit price above 0.');
+    if (side === 'buy' && draft.notional !== null && draft.notional > account.usdc) {
+      setFormError(`You have ${formatAmount(account.usdc)} USDC available.`);
+      return;
+    }
+    if (side === 'sell' && parseFloat(draft.order.quantity) > available) {
+      setFormError(`You have ${formatQuantity(available)} ${base} available.`);
       return;
     }
     setFormError('');
+    setPrepared({ ...draft, symbol, base, quote });
     setStep('review');
   };
 
-  const handleExecuteTrade = async () => {
-    setStep('signing');
-    setLoading(true);
+  const handlePlace = async () => {
+    setStep('placing');
     setErrorMessage('');
-
     try {
-      // The server fills at its own price; this is only used for the CNDR payment and the signed limit
-      const finalPrice = orderType === 'market' ? livePrice : price;
-      if (!finalPrice || parseFloat(finalPrice) <= 0) {
-        throw new Error('Live price is unavailable right now. Please wait a moment and try again.');
-      }
-
-      const slPrice = useStopLoss
-        ? (side === 'buy'
-            ? (parseFloat(finalPrice) * (1 - stopLossPercentage / 100)).toFixed(2)
-            : (parseFloat(finalPrice) * (1 + stopLossPercentage / 100)).toFixed(2)
-          )
-        : null;
-
-      if (!activeWalletAddress) {
-        throw new Error('Wallet not connected. Please connect your wallet first.');
-      }
-
-      // The server verifies signatures against Arbitrum Sepolia; switch before creating the provider
-      if (ensureCorrectNetwork) {
-        const networkOk = await ensureCorrectNetwork();
-        if (!networkOk) {
-          throw new Error('Please switch your wallet to Arbitrum Sepolia to trade.');
-        }
-      }
-
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const signer = provider.getSigner();
-      const network = await provider.getNetwork();
-
-      // 1. Sign the order first, so rejecting the signature never costs CNDR
-      const domain = {
-        name: 'spot',
-        version: '1',
-        chainId: network.chainId,
-        verifyingContract: '0x0000000000000000000000000000000000000000'
-      };
-
-      const types = {
-        ExchangeAction: [
-          { name: 'payloadHash', type: 'bytes32' },
-          { name: 'nonce', type: 'uint64' }
-        ]
-      };
-
-      const orderParams = {
-        pair,
-        side,
-        orderType,
-        quantity: String(quantity),
-        price: String(finalPrice),
-        stopPrice: slPrice ? String(slPrice) : '0.0'
-      };
-
-      const payloadJson = JSON.stringify({ type: 'newOrder', params: orderParams });
-      const payloadHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(payloadJson));
-      // Signing time doubles as the nonce; the server rejects orders signed more than 5 minutes ago
-      const nonce = Date.now();
-
-      const message = { payloadHash, nonce };
-      const signature = await signer._signTypedData(domain, types, message);
-
-      // 2. BUY: pay CNDR to the treasury on-chain; the server verifies this transfer
-      let txHash = null;
-      const tokenAddress = process.env.NEXT_PUBLIC_CNDR_TOKEN_ADDRESS;
-      if (side === 'buy' && tokenAddress && tokenAddress !== '0x...' && tokenAddress !== '') {
-        const cost = parseFloat(quantity) * parseFloat(finalPrice);
-        const tokenAbi = [
-          "function transfer(address to, uint256 amount) returns (bool)",
-          "function balanceOf(address owner) view returns (uint256)"
-        ];
-        const tokenContract = new ethers.Contract(tokenAddress, tokenAbi, signer);
-
-        // Verify user has sufficient CNDR balance
-        const walletBal = await tokenContract.balanceOf(activeWalletAddress);
-        const formattedBal = parseFloat(ethers.utils.formatUnits(walletBal, 18));
-        if (formattedBal < cost) {
-          throw new Error(`Insufficient CNDR balance. Required: ${cost.toFixed(2)} CNDR. Your balance: ${formattedBal.toFixed(2)} CNDR. Please claim CNDR from the faucet above.`);
-        }
-
-        // Treasury address comes from the server; never fall back to a hard-coded address
-        const masterRes = await fetch('/api/trade?masterAddress=true');
-        const masterData = await masterRes.json();
-        if (!masterData.success || !masterData.masterAddress) {
-          throw new Error(masterData.error || 'Trading treasury is not configured. Please try again later.');
-        }
-
-        setErrorMessage('Please confirm the CNDR transfer in your wallet...');
-        const tx = await tokenContract.transfer(masterData.masterAddress, ethers.utils.parseUnits(cost.toFixed(6), 18));
-        setErrorMessage('Waiting for CNDR transfer transaction to be mined...');
-        await tx.wait();
-        txHash = tx.hash;
-      }
-
-      // 3. Submit the signed order (with the payment proof for buys)
-      setErrorMessage('Submitting signed order...');
-
-      const response = await fetch('/api/trade', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          pair,
-          side,
-          orderType,
-          quantity,
-          price: finalPrice,
-          stopLossPrice: slPrice,
-          clientWallet: activeWalletAddress,
-          signature,
-          nonce,
-          txHash
-        }),
+      const result = await placeSpotOrder({
+        key: tradingKey,
+        order: { symbolID: prepared.symbol.id, clOrdID: newClientOrderId('q'), ...prepared.order },
+        builder: builder ? { id: builder.id, fee: builder.fee } : null,
+        network
       });
-
-      const data = await response.json();
-      if (data.success) {
-        setExecutionResult(data);
-        setStep('success');
+      const error = batchError(result);
+      if (error) throw new Error(error);
+      setPlacedId(result.json.data[0]?.orderID ?? null);
+      setStep('done');
+      // Give SoDEX a moment to settle the fill before reading balances again
+      setTimeout(() => {
+        refreshAccount();
         if (onTradeSuccess) onTradeSuccess();
-      } else {
-        // CNDR was already sent; show the payment hash so the transfer can be traced
-        const paymentNote = txHash ? ` (CNDR payment tx: ${txHash})` : '';
-        throw new Error((data.error || 'Server rejected order execution.') + paymentNote);
-      }
+      }, 1500);
     } catch (err) {
-      console.error(err);
-      setErrorMessage(err.message || 'Signature rejected or trade failed risk gates checks.');
+      setErrorMessage(err.message || 'SoDEX refused the order.');
       setStep('error');
-    } finally {
-      setLoading(false);
     }
   };
 
-  const base = pair.split('-')[0];
-  const unitPrice = orderType === 'market' ? livePrice : price;
-  const estimate = parseFloat(quantity) > 0 && parseFloat(unitPrice) > 0
-    ? parseFloat(quantity) * parseFloat(unitPrice)
-    : null;
-  const tokenAddress = process.env.NEXT_PUBLIC_CNDR_TOKEN_ADDRESS;
-  const paysOnChain = side === 'buy' && tokenAddress && tokenAddress !== '0x...' && tokenAddress !== '';
-  const formatAmount = (n) => parseFloat(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
   const resetForm = () => {
-    setQuantity('');
+    setAmount('');
     setPrice('');
     setFormError('');
+    setPrepared(null);
     setStep('input');
   };
+
+  const intro = (
+    <p className="qt-intro">
+      Orders go from this browser straight to your {network.label} account
+      {network.isMainnet ? ' and use real USDC.' : ' and use test USDC.'}
+    </p>
+  );
+
+  if (account.status !== 'ready') {
+    return (
+      <section className="qt" aria-labelledby="qt-title">
+        <h2 id="qt-title" className="qt-title">Trade</h2>
+        {intro}
+        {account.status === 'missing' ? (
+          <p className="qt-note">
+            This wallet has no {network.label} account yet.{' '}
+            <a className="pf-link" href={network.appUrl} target="_blank" rel="noreferrer">Open SoDEX</a> with this
+            wallet, create the account and move USDC to Spot, then come back.
+          </p>
+        ) : account.status === 'error' ? (
+          <>
+            <p className="qt-error" role="alert">SoDEX could not be reached: {account.error}</p>
+            <button type="button" className="qt-secondary" onClick={refreshAccount}>Try again</button>
+          </>
+        ) : (
+          <p className="qt-note" role="status">Loading your SoDEX account</p>
+        )}
+      </section>
+    );
+  }
+
+  if (!tradingReady) {
+    return (
+      <section className="qt" aria-labelledby="qt-title">
+        <h2 id="qt-title" className="qt-title">Trade</h2>
+        {intro}
+        <EnableTrading />
+      </section>
+    );
+  }
 
   return (
     <section className="qt" aria-labelledby="qt-title">
       <h2 id="qt-title" className="qt-title">Trade</h2>
-      <p className="qt-intro">
-        Buys are paid in CNDR from your wallet and sells pay CNDR back. Orders run on SoDEX testnet.
-      </p>
+      {intro}
 
       {step === 'input' && (
         <div className="qt-form">
@@ -273,18 +247,18 @@ export default function QuickTrade({ onTradeSuccess }) {
 
           <label className="qt-field">
             <span>Market</span>
-            <select value={pair} onChange={(e) => setPair(e.target.value)}>
-              <option value="BTC-USDC">Bitcoin (BTC-USDC)</option>
-              <option value="ETH-USDC">Ether (ETH-USDC)</option>
-              <option value="SOL-USDC">Solana (SOL-USDC)</option>
-              <option value="UNI-USDC">Uniswap (UNI-USDC)</option>
-              <option value="AAVE-USDC">Aave (AAVE-USDC)</option>
+            <select value={symbol?.name || ''} onChange={(e) => setMarketName(e.target.value)} disabled={!symbols.length}>
+              {symbols.length === 0 && <option value="">{marketsError ? 'Markets unavailable' : 'Loading markets'}</option>}
+              {symbols.map(s => (
+                <option key={s.id} value={s.name}>{s.displayName}</option>
+              ))}
             </select>
           </label>
+          {marketsError && <p className="qt-error" role="alert">SoDEX markets could not be loaded: {marketsError}</p>}
           <p className="qt-price" aria-live="polite">
-            {livePrice
-              ? `1 ${base} = $${formatAmount(livePrice)}`
-              : fetchingPrice ? 'Loading the live price' : 'Live price unavailable'}
+            {lastPrice
+              ? `1 ${base} = ${formatAmount(lastPrice)} ${quote}`
+              : priceLoading ? 'Loading the last price' : 'No recent trades on this market'}
           </p>
 
           <div className="qt-row">
@@ -296,135 +270,116 @@ export default function QuickTrade({ onTradeSuccess }) {
               </select>
             </label>
             <label className="qt-field">
-              <span>Quantity in {base}</span>
+              <span>{spendsQuote ? `Amount in ${quote}` : `Quantity in ${base}`}</span>
               <input
                 type="number"
                 inputMode="decimal"
                 min="0"
                 step="any"
                 placeholder="0.00"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
               />
             </label>
           </div>
 
           {orderType === 'limit' && (
             <label className="qt-field">
-              <span>Limit price in USDC</span>
+              <span>Limit price in {quote}</span>
               <input
                 type="number"
                 inputMode="decimal"
                 min="0"
                 step="any"
-                placeholder="0.00"
+                placeholder={lastPrice ? String(lastPrice) : '0.00'}
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
               />
             </label>
           )}
 
-          {side === 'buy' && (
-            <>
-              <label className="qt-check">
-                <input type="checkbox" checked={useStopLoss} onChange={(e) => setUseStopLoss(e.target.checked)} />
-                <span>Add a trailing stop-loss</span>
-              </label>
-              {useStopLoss && (
-                <label className="qt-field">
-                  <span>Sell if the price falls {stopLossPercentage}% below the fill</span>
-                  <input
-                    type="range"
-                    min="3"
-                    max="15"
-                    value={stopLossPercentage}
-                    onChange={(e) => setStopLossPercentage(parseInt(e.target.value))}
-                  />
-                </label>
-              )}
-            </>
-          )}
+          <p className="qt-note">
+            Available: {side === 'buy' ? `${formatAmount(available)} ${quote}` : `${formatQuantity(available)} ${base}`}
+          </p>
 
-          {estimate !== null && (
+          {draft?.ok && draft.notional !== null && (
             <p className="qt-estimate">
-              About <strong>{formatAmount(estimate)} CNDR</strong> {side === 'buy' ? 'to pay' : 'to receive'}
+              {spendsQuote
+                ? <>About <strong>{lastPrice ? formatQuantity(draft.notional / lastPrice) : '?'} {base}</strong> at the last price</>
+                : <>About <strong>{formatAmount(draft.notional)} {quote}</strong> {side === 'buy' ? 'to pay' : 'to receive'}</>}
             </p>
           )}
 
           {formError && <p className="qt-error" role="alert">{formError}</p>}
 
-          <button type="button" className="qt-primary" onClick={handleReviewOrder}>Review order</button>
+          <button type="button" className="qt-primary" onClick={handleReview} disabled={!symbol}>Review order</button>
         </div>
       )}
 
-      {step === 'review' && (
+      {step === 'review' && prepared && (
         <div className="qt-form">
           <h3 className="qt-subtitle">Check your order</h3>
           <dl className="qt-summary">
-            <div><dt>Order</dt><dd>{side === 'buy' ? 'Buy' : 'Sell'} {quantity} {base}</dd></div>
+            <div>
+              <dt>Order</dt>
+              <dd>
+                {side === 'buy' ? 'Buy' : 'Sell'}{' '}
+                {prepared.order.funds ? `${prepared.base} with ${formatAmount(prepared.order.funds)} ${prepared.quote}` : `${prepared.order.quantity} ${prepared.base}`}
+              </dd>
+            </div>
             <div>
               <dt>Type</dt>
-              <dd>{orderType === 'market' ? 'Market' : `Limit at $${formatAmount(price)}`}</dd>
+              <dd>{prepared.order.price ? `Limit at ${formatAmount(prepared.order.price)} ${prepared.quote}` : 'Market'}</dd>
             </div>
-            {estimate !== null && (
-              <div><dt>{side === 'buy' ? 'You pay' : 'You receive'}</dt><dd>about {formatAmount(estimate)} CNDR</dd></div>
+            {prepared.notional !== null && !prepared.order.funds && (
+              <div><dt>{side === 'buy' ? 'You pay' : 'You receive'}</dt><dd>about {formatAmount(prepared.notional)} {prepared.quote}</dd></div>
             )}
-            {side === 'buy' && useStopLoss && (
-              <div><dt>Stop-loss</dt><dd>{stopLossPercentage}% below the fill</dd></div>
-            )}
+            <div>
+              <dt>Cinder fee</dt>
+              <dd>{chargesFee ? `${formatFeeRate(builder.fee)} of the sale` : 'None'}</dd>
+            </div>
           </dl>
           <p className="qt-note">
-            Your wallet will ask you to sign the order{paysOnChain ? ', then to send the CNDR payment' : ''}.
-            The final price is the live price when the order is filled.
+            {prepared.order.price
+              ? 'A limit order waits on the book until the price is reached. Cancel it from your portfolio.'
+              : 'A market order fills straight away at the best prices on the book.'}{' '}
+            SoDEX also charges its own trading fee.
           </p>
-          {activeWalletAddress ? (
-            <button type="button" className="qt-primary" onClick={() => handleExecuteTrade()}>
-              {paysOnChain ? 'Sign and pay' : side === 'buy' ? 'Sign and buy' : 'Sign and sell'}
-            </button>
-          ) : (
-            <button type="button" className="qt-primary" onClick={handleConnectWallet} disabled={isConnecting}>
-              {isConnecting ? 'Waiting for your wallet' : 'Connect wallet'}
-            </button>
-          )}
+          <button type="button" className="qt-primary" onClick={handlePlace}>
+            {side === 'buy' ? 'Place buy order' : 'Place sell order'}
+          </button>
           <button type="button" className="qt-secondary" onClick={() => setStep('input')}>Edit order</button>
         </div>
       )}
 
-      {step === 'signing' && (
+      {step === 'placing' && (
         <div className="qt-status" role="status" aria-live="polite">
           <span className="qt-spinner" aria-hidden="true" />
-          <p className="qt-status-title">Waiting for your wallet</p>
-          <p className="qt-note">{errorMessage || 'Confirm the request in your wallet.'}</p>
+          <p className="qt-status-title">Sending the order to SoDEX</p>
         </div>
       )}
 
-      {step === 'success' && (
+      {step === 'done' && (
         <div className="qt-status" role="status">
-          <p className="qt-status-title">
-            {executionResult?.simulated ? 'Order recorded as simulated' : 'Order filled'}
+          <p className="qt-status-title">SoDEX accepted the order</p>
+          <p className="qt-note">
+            {prepared?.order.price
+              ? 'It is on the book now. Your open orders and balances update below.'
+              : 'Your balances and trades update below in a moment.'}
           </p>
-          {executionResult?.simulated && (
-            <p className="qt-note">
-              {String(executionResult?.sodexOrderId || '').startsWith('ord_mock_')
-                ? 'This server runs without SoDEX credentials, so orders are simulated at the live price.'
-                : 'SoDEX did not execute this order, so it was recorded at the live price without a real fill.'}
-            </p>
+          {placedId !== null && (
+            <dl className="qt-summary">
+              <div><dt>Order ID</dt><dd className="qt-id">{String(placedId)}</dd></div>
+            </dl>
           )}
-          <dl className="qt-summary">
-            <div><dt>Fill price</dt><dd>${formatAmount(executionResult?.fillPrice || 0)}</dd></div>
-            <div><dt>Status</dt><dd>{String(executionResult?.status || '').toLowerCase()}</dd></div>
-            {executionResult?.sodexOrderId && (
-              <div><dt>Order ID</dt><dd className="qt-id">{executionResult.sodexOrderId}</dd></div>
-            )}
-          </dl>
           <button type="button" className="qt-secondary" onClick={resetForm}>Place another order</button>
         </div>
       )}
 
       {step === 'error' && (
         <div className="qt-status" role="alert">
-          <p className="qt-status-title is-error">The order did not go through</p>
-          <p className="qt-note">{errorMessage || 'The signature was rejected or the order failed a check.'}</p>
+          <p className="qt-status-title is-error">SoDEX refused the order</p>
+          <p className="qt-note">{errorMessage}</p>
           <button type="button" className="qt-primary" onClick={() => setStep('review')}>Try again</button>
           <button type="button" className="qt-secondary" onClick={() => setStep('input')}>Edit order</button>
         </div>

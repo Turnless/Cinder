@@ -36,16 +36,7 @@ function useDismiss(open, setOpen, containerRef, returnRef) {
 
 export default function Header() {
   const pathname = usePathname();
-  const {
-    isConnected,
-    walletAddress,
-    balance,
-    isDemoBalance,
-    ethBalance,
-    isClaiming,
-    disconnectWallet,
-    claimFaucet
-  } = useWallet();
+  const { isConnected, walletAddress, network, account, tradingKey, disconnectWallet } = useWallet();
 
   const [walletOpen, setWalletOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -74,10 +65,16 @@ export default function Header() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Claiming keeps the panel open so the result is visible in the balance
-  const handleClaim = async () => {
-    await claimFaucet();
-  };
+  const usdc = account.usdc.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const buttonBalance = {
+    ready: `${usdc} USDC`,
+    loading: 'Loading',
+    missing: 'No SoDEX account',
+    error: 'SoDEX unavailable'
+  }[account.status] || '';
+  const keyExpires = tradingKey
+    ? new Date(Number(tradingKey.expiresAt)).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+    : null;
 
   const handleDisconnect = () => {
     setWalletOpen(false);
@@ -116,9 +113,7 @@ export default function Header() {
                 aria-controls="hd-wallet-panel"
                 onClick={() => setWalletOpen(open => !open)}
               >
-                <span className="hd-wallet-balance">
-                  {balance.toLocaleString()} CNDR{isDemoBalance ? ' (demo)' : ''}
-                </span>
+                <span className="hd-wallet-balance">{buttonBalance}</span>
                 <span className="hd-wallet-address">{shortAddress}</span>
               </button>
 
@@ -127,33 +122,33 @@ export default function Header() {
                   <p className="hd-panel-label">Connected wallet</p>
                   <p className="hd-wallet-full">{walletAddress}</p>
 
-                  <dl className="hd-wallet-figures">
-                    <div>
-                      <dt>CNDR</dt>
-                      <dd>{balance.toLocaleString()}</dd>
-                    </div>
-                    {ethBalance !== null && (
-                      <div>
-                        <dt>ETH for gas</dt>
-                        <dd>{ethBalance}</dd>
-                      </div>
-                    )}
-                  </dl>
-                  {isDemoBalance && (
+                  {account.status === 'missing' ? (
                     <p className="hd-panel-note">
-                      Demo balance, kept in this browser. No CNDR contract is configured.
+                      This wallet has no {network.label} account yet. Open SoDEX with this wallet to create one and add USDC.
                     </p>
+                  ) : (
+                    <dl className="hd-wallet-figures">
+                      <div>
+                        <dt>USDC available</dt>
+                        <dd>{account.status === 'ready' ? usdc : 'Loading'}</dd>
+                      </div>
+                      <div>
+                        <dt>Trading</dt>
+                        <dd>{keyExpires ? `On until ${keyExpires}` : 'Off'}</dd>
+                      </div>
+                    </dl>
                   )}
+                  {account.status === 'error' && (
+                    <p className="hd-panel-note">SoDEX could not be reached: {account.error}</p>
+                  )}
+                  <p className="hd-panel-note">
+                    Funds stay in your own {network.label} account. Cinder never holds them.
+                  </p>
 
                   <div className="hd-panel-actions">
-                    <button
-                      type="button"
-                      className="hd-button hd-button-primary"
-                      onClick={handleClaim}
-                      disabled={isClaiming}
-                    >
-                      {isClaiming ? 'Claiming 10,000 test CNDR' : 'Claim 10,000 test CNDR'}
-                    </button>
+                    <a className="hd-button hd-button-primary" href={network.appUrl} target="_blank" rel="noreferrer">
+                      {account.status === 'missing' ? 'Open SoDEX' : 'Add USDC on SoDEX'}
+                    </a>
                     <button type="button" className="hd-button" onClick={handleDisconnect}>
                       Disconnect
                     </button>

@@ -1,6 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import { getSodexNetwork } from '../../lib/sodex-network';
+
+const network = getSodexNetwork();
 
 export default function Footer() {
   return (
@@ -12,7 +15,8 @@ export default function Footer() {
             <span style={{ color: 'var(--color-wire-gold)' }}>der</span>
           </Link>
           <p>
-            Trades run on SoDEX testnet with test funds. Nothing on this site is financial advice.
+            Trades run on {network.label}{network.isMainnet ? ' with real funds' : ' with test funds'}. Nothing on this
+            site is financial advice.
           </p>
         </div>
 

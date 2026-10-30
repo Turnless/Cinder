@@ -31,25 +31,3 @@ jobs:
         env:
           # db.js refuses to start in production without a database URL; a throwaway local file satisfies it in CI
           TURSO_DATABASE_URL: file:ci-build.db
-
-  contracts:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: contracts
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: contracts/package-lock.json
-
-      - run: npm ci
-
-      - name: Contract tests
-        run: npx hardhat test
-        env:
-          HARDHAT_DISABLE_TELEMETRY_PROMPT: 'true'

@@ -8,6 +8,7 @@ import { query, execute, batch } from '../lib/db.js';
 import { NARRATIVES, updateNarrativeTemperatures } from './narrative.js';
 import { detectShift } from './shift-detector.js';
 import { placeOrder, getTicker, fetchAccountBalances, getAccountState } from '../lib/sodex.js';
+import { getSodexNetwork } from '../lib/sodex-network.js';
 import { createBreakingStory } from '../lib/openai.js';
 import { validateStory, getTemplateStory } from '../lib/validator.js';
 import { sendMessage, sendNarrativeAlert, sendDailyDigest } from '../lib/telegram.js';
@@ -72,17 +73,6 @@ async function isKillSwitchActive() {
  * @returns {Promise<number>} Portfolio value in USD
  */
 async function calculatePortfolioValue(userAddress) {
-  if (userAddress) {
-    try {
-      const rows = await query(`SELECT balance FROM wallet_balances WHERE address = ?`, [userAddress.toLowerCase()]);
-      if (rows && rows.length > 0) {
-        return parseFloat(rows[0].balance);
-      }
-    } catch (e) {
-      console.warn('Could not read from wallet_balances in calculatePortfolioValue:', e.message);
-    }
-  }
-
   const privateKey = process.env.SODEX_API_KEY_PRIVATE_KEY;
   const isMockMode = !privateKey || 
                      privateKey === 'your_api_key_private_key_returned_from_addAPIKey' ||
@@ -288,18 +278,7 @@ export async function checkMarketAndTrade(precomputedTemps) {
 
   // 5. Compute position size
   const portfolioValue = await calculatePortfolioValue(userAddress);
-  let usdcBal = parseFloat(accountState.balances.find(b => b.asset === 'USDC')?.free || '0');
-  
-  if (userAddress) {
-    try {
-      const rows = await query(`SELECT balance FROM wallet_balances WHERE address = ?`, [userAddress.toLowerCase()]);
-      if (rows && rows.length > 0) {
-        usdcBal = parseFloat(rows[0].balance);
-      }
-    } catch (e) {
-      console.warn('Could not read from wallet_balances in checkMarketAndTrade:', e.message);
-    }
-  }
+  const usdcBal = parseFloat(accountState.balances.find(b => b.asset === 'USDC')?.free || '0');
 
   const sizeUSD = calculatePositionSize(portfolioValue, usdcBal);
 
@@ -344,6 +323,8 @@ export async function checkMarketAndTrade(precomputedTemps) {
 
   if (orderResult && orderResult.status === 'FILLED') {
     const fillPrice = parseFloat(orderResult.price || price);
+    // Record what SoDEX filled, which can be less than the order when the book is thin
+    const filledQty = parseFloat(orderResult.executedQty) > 0 ? orderResult.executedQty : targetQty;
     const stopLossPrice = (fillPrice * (1 - 0.08)).toFixed(4);
 
     console.log(`[SUCCESS] Trade filled successfully! Order ID: ${orderResult.orderId}`);
@@ -354,7 +335,7 @@ export async function checkMarketAndTrade(precomputedTemps) {
         `[EXECUTION] <b>[Cinder Trade Filled]</b>\n\n` +
         `<b>Asset:</b> ${targetToken}\n` +
         `<b>Side:</b> BUY\n` +
-        `<b>Quantity:</b> <code>${targetQty}</code>\n` +
+        `<b>Quantity:</b> <code>${filledQty}</code>\n` +
         `<b>Price:</b> <code>$${fillPrice.toFixed(4)}</code>\n` +
         `<b>Stop-Loss:</b> <code>$${stopLossPrice}</code>\n` +
         `<b>Order ID:</b> <code>${orderResult.orderId}</code>`
@@ -376,7 +357,7 @@ export async function checkMarketAndTrade(precomputedTemps) {
         tradeData: {
           side: 'BUY',
           pair: `${targetToken}-USDC`,
-          quantity: targetQty,
+          quantity: filledQty,
           price: fillPrice.toString(),
           status: 'FILLED',
           orderId: orderResult.orderId
@@ -398,7 +379,7 @@ export async function checkMarketAndTrade(precomputedTemps) {
           {
             side: 'BUY',
             pair: `${targetToken}-USDC`,
-            quantity: targetQty,
+            quantity: filledQty,
             fillPrice: fillPrice.toString(),
             status: 'FILLED',
             reason: 'Data Validation Failed (LLM Hallucinated)'
@@ -407,7 +388,7 @@ export async function checkMarketAndTrade(precomputedTemps) {
       }
     } catch (err) {
       console.error('Failed to generate breaking story via LLM:', err);
-      storyBody = `Narrative shifted from ${fromName} to ${toName}. Executed BUY of ${targetQty} ${targetToken} at ${fillPrice}.`;
+      storyBody = `Narrative shifted from ${fromName} to ${toName}. Executed BUY of ${filledQty} ${targetToken} at ${fillPrice}.`;
     }
 
     // Insert story
@@ -428,7 +409,7 @@ export async function checkMarketAndTrade(precomputedTemps) {
       {
         sql: `INSERT INTO trades (id, shift_id, story_id, user_address, side, pair, order_type, quantity, fill_price, stop_loss_price, sodex_order_id, status, created_at, filled_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [tradeId, shiftId, storyId, userAddress.toLowerCase(), 'buy', `${targetToken}-USDC`, 'market', targetQty, fillPrice.toString(), stopLossPrice, orderResult.orderId, 'filled', now, now]
+        args: [tradeId, shiftId, storyId, userAddress.toLowerCase(), 'buy', `${targetToken}-USDC`, 'market', filledQty, fillPrice.toString(), stopLossPrice, orderResult.orderId, 'filled', now, now]
       },
       {
         sql: `INSERT INTO narrative_shifts (id, from_narrative, to_narrative, confidence, signals, story_id, trade_id, detected_at)
@@ -543,7 +524,7 @@ export async function runPreTradeChecks(shiftData, accountState) {
 
   // 6. Environment separation safety gate
   const isStaging = process.env.VERCEL_ENV === 'preview' || process.env.VERCEL_ENV === 'development' || process.env.NODE_ENV !== 'production';
-  const isMainnetEndpoint = (process.env.SODEX_API_BASE_URL || '').includes('mainnet');
+  const isMainnetEndpoint = getSodexNetwork().isMainnet;
   if (isStaging && isMainnetEndpoint) {
     failedGates.push('STAGING_ENVIRONMENT_MAINNET_URL_BLOCKED');
   }

@@ -51,9 +51,4 @@ pip-delete-this-directory.txt
 
 .vercel
 
-# Hardhat (contracts/)
-contracts/artifacts/
-contracts/cache/
-contracts/coverage/
-
 .env*

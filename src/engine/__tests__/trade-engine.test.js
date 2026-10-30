@@ -82,7 +82,7 @@ describe('Cinder Trade Execution Engine', () => {
     process.env.USER_WALLET_ADDRESS = '0x1234567890123456789012345678901234567890';
     process.env.SODEX_API_KEY_PRIVATE_KEY = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     process.env.SODEX_API_KEY_NAME = 'test-sodex-api-key-name';
-    process.env.SODEX_API_BASE_URL = 'https://testnet-gw.sodex.dev/api/v1/spot';
+    process.env.NEXT_PUBLIC_SODEX_NETWORK = 'testnet';
     process.env.VERCEL_ENV = 'production';
     process.env.NODE_ENV = 'production';
 
@@ -339,27 +339,27 @@ describe('Cinder Trade Execution Engine', () => {
 
     // Gate 6: Environment safety check
     describe('Gate 6: Environment Safety Separator', () => {
-      it('fails with STAGING_ENVIRONMENT_MAINNET_URL_BLOCKED if staging and mainnet base URL are mismatched', async () => {
+      it('fails with STAGING_ENVIRONMENT_MAINNET_URL_BLOCKED if staging is set to SoDEX mainnet', async () => {
         process.env.VERCEL_ENV = 'development';
-        process.env.SODEX_API_BASE_URL = 'https://mainnet-gw.sodex.dev/api/v1/spot';
+        process.env.NEXT_PUBLIC_SODEX_NETWORK = 'mainnet';
 
         const result = await runPreTradeChecks(defaultShift, defaultAccountState);
         expect(result.passed).toBe(false);
         expect(result.failedGates).toContain('STAGING_ENVIRONMENT_MAINNET_URL_BLOCKED');
       });
 
-      it('passes environmental block if mainnet URL is used in production', async () => {
+      it('passes environmental block if mainnet is used in production', async () => {
         process.env.VERCEL_ENV = 'production';
         process.env.NODE_ENV = 'production';
-        process.env.SODEX_API_BASE_URL = 'https://mainnet-gw.sodex.dev/api/v1/spot';
+        process.env.NEXT_PUBLIC_SODEX_NETWORK = 'mainnet';
 
         const result = await runPreTradeChecks(defaultShift, defaultAccountState);
         expect(result.failedGates).not.toContain('STAGING_ENVIRONMENT_MAINNET_URL_BLOCKED');
       });
 
-      it('passes environmental block if testnet URL is used in staging', async () => {
+      it('passes environmental block if testnet is used in staging', async () => {
         process.env.VERCEL_ENV = 'preview';
-        process.env.SODEX_API_BASE_URL = 'https://testnet-gw.sodex.dev/api/v1/spot';
+        process.env.NEXT_PUBLIC_SODEX_NETWORK = 'testnet';
 
         const result = await runPreTradeChecks(defaultShift, defaultAccountState);
         expect(result.failedGates).not.toContain('STAGING_ENVIRONMENT_MAINNET_URL_BLOCKED');

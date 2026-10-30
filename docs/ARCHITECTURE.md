@@ -782,13 +782,14 @@ To secure sensitive dApp endpoints (`/dashboard` and `/portfolio`):
 - **Client Route Interceptors**: The Next.js client renders checks against the connection context. If the wallet is disconnected, standard pages are pre-empted with `router.push('/')` redirects.
 - **Preview Teasers**: The landing page `/` displays a single latest story teaser. The teaser card content is readable but covered by an absolute-positioned, glassmorphic `Unlock Market Intelligence` card utilizing `backdrop-filter: blur(10px)`. Clicking this card triggers the Connect Wallet modal.
 
-### CNDR Token & Settlement
-CNDR is a testnet ERC-20 on Arbitrum Sepolia (`0x6C64923FD6478D265A1b5a971c6bC59cB35A5FA7`, source in `contracts/src/CinderToken.sol`):
-- **Faucet**: any wallet can claim 10,000 CNDR once every 24 hours. Claims are ordinary transactions from the user's wallet (they need a little Arbitrum Sepolia ETH for gas).
-- **Buys**: QuickTrade transfers CNDR to the treasury wallet, then submits the signed order with the transaction hash. The server checks the on-chain transfer (payer, treasury, amount within 2% of the server-priced cost) and accepts each payment once.
-- **Sells**: once a sell is settled, the treasury (`TREASURY_PRIVATE_KEY`) transfers the proceeds back in CNDR.
+### User Trading on SoDEX
+Users trade from their own SoDEX accounts with their own USDC; Cinder never holds funds.
+- **Account**: the connected wallet's SoDEX account is read from public endpoints (`/user/{address}/subaccounts`, spot balances, open orders, fills). A wallet without one is sent to SoDEX to create it.
+- **Enable trading**: the wallet signs two gas-free EIP-712 requests in the `universal` domain. The first registers a trading key created in the browser, with withdraw and transfer disabled and a 7-day expiry; the key stays in this browser's storage. The second approves Cinder's builder fee at exactly the configured rate.
+- **Orders**: the trading key signs each order (`ExchangeAction` over the keccak256 of the order payload) and the browser sends it straight to SoDEX. Every order carries Cinder's builder ID and fee; on spot the fee is charged on sells only and paid to Cinder in USDC.
+- **Network**: `NEXT_PUBLIC_SODEX_NETWORK` picks testnet or mainnet for the whole deployment.
 
-An earlier ERC-4337 "gasless" faucet path was removed: it used the user's own address as the UserOperation sender, which only works for smart-contract accounts.
+Cinder's automatic trades are separate: the server places them on Cinder's own account with its own API key.
 
 ---
 
@@ -829,8 +830,8 @@ An earlier ERC-4337 "gasless" faucet path was removed: it used the user's own ad
           ┌──────────────────┼──────────────────┐
           ▼                  ▼                  ▼
      ┌─────────┐       ┌───────────┐     ┌────────────────┐
-     │SoSoValue│       │   SoDEX   │     │Arbitrum Sepolia│
-     │  API    │       │   API     │     │ (CNDR token)   │
+     │SoSoValue│       │   SoDEX   │     │ Users' browsers│
+     │  API    │       │   API     │◄────│ (own accounts) │
      └─────────┘       └───────────┘     └────────────────┘
 ```
 
