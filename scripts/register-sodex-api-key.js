@@ -64,7 +64,15 @@ async function main() {
   const days = Number(process.env.SODEX_KEY_DAYS) || 90;
   console.log(`[INFO] ${network.label}, master wallet ${master.address}, key valid for ${days} days`);
 
-  const { primaryAccountID } = await readSodex(await fetch(`${network.publicBase}/user/${master.address}/subaccounts`));
+  const account = await readSodex(await fetch(`${network.publicBase}/user/${master.address}/subaccounts`)).catch(err => {
+    if (/user not found/i.test(err.message)) {
+      console.error(`[ERROR] ${master.address} has no ${network.label} account. Use the private key of the wallet that has one,`);
+      console.error(`        or open ${network.appUrl} with this wallet to create it, then run this again.`);
+      process.exit(1);
+    }
+    throw err;
+  });
+  const { primaryAccountID } = account;
   console.log(`[INFO] SoDEX account ${primaryAccountID}`);
 
   const key = ethers.Wallet.createRandom();
