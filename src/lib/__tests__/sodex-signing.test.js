@@ -10,6 +10,7 @@ import {
   payloadHash,
   roundToStep,
   SPOT_ACTION,
+  signRevokeApiKey,
   nextNonce,
   TRADING_KEY_PERMISSIONS
 } from '../sodex-signing';
@@ -206,5 +207,34 @@ describe('network settings', () => {
     expect(getBuilderConfig('', '50')).toBeNull();
     expect(getBuilderConfig('1234', '2001')).toBeNull();
     expect(getBuilderConfig('1234', '0.5')).toBeNull();
+  });
+});
+
+describe('signRevokeApiKey', () => {
+  it('signs revokeAPIKey with the master wallet in each engine domain, without X-API-Key', async () => {
+    for (const engine of ['spot', 'futures']) {
+      const nonce = 1760373925002;
+      const { headers, body } = await signRevokeApiKey({
+        privateKey: MASTER.privateKey, engine, sodexChainId: 138565, accountID: 60494, name: 'cinder-auto-1', nonce
+      });
+      expect(body).toBe('{"accountID":60494,"name":"cinder-auto-1"}');
+      expect(headers['X-API-Key']).toBeUndefined();
+      expect(headers['X-API-Sign'].startsWith('0x01')).toBe(true);
+      expect(['00', '01']).toContain(headers['X-API-Sign'].slice(-2));
+
+      const sig = '0x' + headers['X-API-Sign'].slice(4, -2) + (parseInt(headers['X-API-Sign'].slice(-2), 16) + 27).toString(16);
+      const recovered = ethers.utils.verifyTypedData(
+        { name: engine, version: '1', chainId: 138565, verifyingContract: '0x0000000000000000000000000000000000000000' },
+        { ExchangeAction: [{ name: 'payloadHash', type: 'bytes32' }, { name: 'nonce', type: 'uint64' }] },
+        { payloadHash: payloadHash('revokeAPIKey', { accountID: 60494, name: 'cinder-auto-1' }), nonce },
+        sig
+      );
+      expect(recovered).toBe(MASTER.address);
+    }
+  });
+
+  it('refuses the default key and unknown engines', async () => {
+    await expect(signRevokeApiKey({ privateKey: MASTER.privateKey, engine: 'spot', sodexChainId: 1, accountID: 1, name: 'default' })).rejects.toThrow();
+    await expect(signRevokeApiKey({ privateKey: MASTER.privateKey, engine: 'universal', sodexChainId: 1, accountID: 1, name: 'k' })).rejects.toThrow();
   });
 });

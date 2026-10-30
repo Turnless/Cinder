@@ -6,6 +6,7 @@
 //
 //   node scripts/register-sodex-api-key.js            # key valid for 90 days
 //   SODEX_KEY_DAYS=30 node scripts/register-sodex-api-key.js
+//   node scripts/register-sodex-api-key.js --revoke cinder-auto-1234abcd   # revoke a key in Spot and Perps
 //
 // The network follows NEXT_PUBLIC_SODEX_NETWORK (testnet unless set to mainnet).
 // It prints USER_WALLET_ADDRESS, SODEX_API_KEY_NAME and SODEX_API_KEY_PRIVATE_KEY for the server's env.
@@ -13,7 +14,7 @@ import { ethers } from 'ethers';
 import fs from 'fs';
 import path from 'path';
 import { getSodexNetwork } from '../src/lib/sodex-network.js';
-import { buildAddTradingKey, toUniversalSignature, nextNonce } from '../src/lib/sodex-signing.js';
+import { buildAddTradingKey, toUniversalSignature, nextNonce, signRevokeApiKey } from '../src/lib/sodex-signing.js';
 
 // Values already in the environment win over .env.local, which wins over .env
 function loadEnv() {
@@ -51,6 +52,29 @@ async function readSodex(response) {
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Revokes a key in both engines; each needs its own master-wallet signature
+async function revoke(network, master, accountID, name) {
+  for (const [engine, path] of [['spot', 'spot'], ['futures', 'perps']]) {
+    const { headers, body } = await signRevokeApiKey({
+      privateKey: master.privateKey,
+      engine,
+      sodexChainId: network.chainId,
+      accountID,
+      name
+    });
+    try {
+      await readSodex(await fetch(`${network.publicBase}/${path}/accounts/api-keys`, { method: 'DELETE', headers, body }));
+      console.log(`[INFO] Revoked ${name} in ${path}.`);
+    } catch (err) {
+      console.error(`[ERROR] ${path} refused to revoke ${name}: ${err.message}`);
+    }
+  }
+  await wait(2000);
+  const keys = await readSodex(await fetch(`${network.publicBase}/user/${master.address}/api-keys?accountID=${accountID}&name=${name}`)).catch(() => null);
+  const left = ['spot', 'perps'].filter(e => Array.isArray(keys?.[e]) && keys[e].some(k => k.name === name));
+  console.log(left.length ? `[WARNING] Still listed in: ${left.join(', ')}. Check again in a minute.` : `[SUCCESS] ${name} is no longer listed.`);
+}
+
 async function main() {
   loadEnv();
   const network = getSodexNetwork();
@@ -73,6 +97,17 @@ async function main() {
     throw err;
   });
   const { primaryAccountID } = account;
+
+  const revokeAt = process.argv.indexOf('--revoke');
+  if (revokeAt !== -1) {
+    const name = process.argv[revokeAt + 1];
+    if (!name) {
+      console.error('[ERROR] Name the key to revoke: --revoke <key name>');
+      process.exit(1);
+    }
+    await revoke(network, master, primaryAccountID, name);
+    return;
+  }
   console.log(`[INFO] SoDEX account ${primaryAccountID}`);
 
   const key = ethers.Wallet.createRandom();

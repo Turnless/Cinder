@@ -243,6 +243,40 @@ export async function signSpotAction({ privateKey, keyName, sodexChainId, type, 
 }
 
 /**
+ * Signs the revocation of an API key for one engine with the master wallet. SoDEX needs two:
+ * one for 'spot' and one for 'futures' (perps); the universal domain is not accepted here.
+ * Master-wallet requests carry no X-API-Key header.
+ * @param {Object} args
+ * @param {string} args.privateKey - The master wallet's private key
+ * @param {'spot'|'futures'} args.engine
+ * @param {number} args.sodexChainId
+ * @param {number} args.accountID
+ * @param {string} args.name - The key to revoke
+ * @param {number} [args.nonce]
+ * @returns {Promise<{headers: Object, body: string}>}
+ */
+export async function signRevokeApiKey({ privateKey, engine, sodexChainId, accountID, name, nonce = nextNonce() }) {
+  if (!['spot', 'futures'].includes(engine)) throw new Error("engine must be 'spot' or 'futures'");
+  if (!ID_PATTERN.test(name) || name === 'default') throw new Error('Invalid key name');
+  const params = { accountID, name };
+  const wallet = new ethers.Wallet(privateKey);
+  const domain = { name: engine, version: '1', chainId: sodexChainId, verifyingContract: ZERO_ADDRESS };
+  const signature = await wallet._signTypedData(domain, EXCHANGE_ACTION_TYPES, {
+    payloadHash: payloadHash('revokeAPIKey', params),
+    nonce
+  });
+  return {
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-API-Nonce': String(nonce),
+      'X-API-Sign': toWireSignature('01', signature)
+    },
+    body: JSON.stringify(params)
+  };
+}
+
+/**
  * Rounds a decimal down to a market's step (quantity) or tick (price) size, as a string
  * with no float noise and no trailing zeros, e.g. roundToStep(0.000123456, '0.00001') -> '0.00012'.
  * SoDEX refuses decimals with trailing zeros ('0.00010' is "quantity is invalid"; '0.0001' is accepted).
