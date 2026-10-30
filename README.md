@@ -74,11 +74,13 @@ Crypto traders face three compounding problems:
 - Real-time portfolio dashboard with positions, PnL, and allocation breakdown
 - Trade history linked to the stories that triggered each trade
 
-### 🦊 Web3 Wallet Provider Integration
-- Detects injected browser wallets (MetaMask, Rabby, Coinbase Wallet, etc.) conforming to **EIP-1193**
-- Performs standard Web3 handshakes (`eth_requestAccounts`) and tracks native gas balances (`eth_getBalance`)
-- Observes live session changes (`accountsChanged`, `chainChanged`) to handle hot account swaps dynamically
-- Built-in on-chain CNDR faucet on Arbitrum Sepolia (10,000 CNDR per wallet per day); a browser-only demo balance is used when no token is configured
+### 🦊 Trading From Your Own SoDEX Account
+- Connect any **EIP-1193** browser wallet (MetaMask, Rabby, Coinbase Wallet, etc.); account switches are followed live
+- Users trade with their own USDC on their own SoDEX account. Cinder never holds funds.
+- "Enable trading" asks the wallet for two gas-free signatures: a trading key kept in the browser (places and cancels orders for 7 days, can never withdraw or transfer), and approval of Cinder's builder fee
+- Orders are signed in the browser and sent straight to SoDEX; the portfolio reads balances, open orders and fills from SoDEX
+- Cinder earns through SoDEX **Builder Codes**: a small fee on users' spot sells, paid to Cinder's account in USDC
+- One setting picks the network for the whole deployment: `NEXT_PUBLIC_SODEX_NETWORK=testnet` or `mainnet`
 
 ### 🔒 Navigation Gating & Session Redirects
 - Restricts dApp routes `/dashboard` and `/portfolio` to connected wallet sessions only
@@ -128,11 +130,10 @@ Crypto traders face three compounding problems:
 | AI/LLM | OpenAI-compatible API (default model `mimo-v2.5`) | Story generation, news classification and refinement |
 | Database | Turso (libSQL) via `@libsql/client` | Hosted SQLite in production, local `local.db` file in development; stores stories, narrative history, trades |
 | Real-time | Server-Sent Events (SSE) | Live story updates on the news feed |
-| Testing | Vitest + Hardhat | App tests with database, LLM and chain mocks; contract tests on a local Hardhat chain |
-| Trading | SoDEX REST API | Order placement, cancellation, account management |
+| Testing | Vitest | App tests with database, LLM and SoDEX mocks; SoDEX signing checked against known signers |
+| Trading | SoDEX REST API | Cinder's own orders from the server; users' orders signed in the browser with EIP-712 |
 | Data | SoSoValue REST API | ETF flows, AI news feed, sector/index data |
 | Alerts | Telegram Bot API | Narrative shift + trade notifications |
-| Token | Solidity + Hardhat | CNDR testnet settlement token with daily faucet (`contracts/`) |
 
 ---
 
@@ -193,12 +194,10 @@ cp .env.example .env   # then fill in your keys
 | `OPENAI_BASE_URL`, `OPENAI_MODEL` | Optional | Use any OpenAI-compatible provider and model (defaults: OpenAI URL, `mimo-v2.5`) |
 | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | Production | libSQL database; the app refuses to start in production without it |
 | `INTERNAL_API_SECRET` | Always | Protects `POST /api/stories`, `POST /api/narrative` and trusted calls to `POST /api/trade` |
-| `SODEX_API_KEY_NAME`, `SODEX_API_KEY_PRIVATE_KEY`, `USER_WALLET_ADDRESS`, `SODEX_API_BASE_URL` | Live trading | Signed SoDEX orders. Without them, trades are simulated. |
-| `SODEX_MASTER_PRIVATE_KEY` | Setup only | Registering the SoDEX API key (`scripts/register-sodex-api-key.js`) |
-| `NEXT_PUBLIC_CNDR_TOKEN_ADDRESS` | CNDR settlement | CNDR token on Arbitrum Sepolia. Without it, balances are browser-only demo balances. |
-| `TREASURY_PRIVATE_KEY` | Recommended | Wallet that receives CNDR for buys and pays CNDR out for sells (falls back to `USER_WALLET_ADDRESS` and the SoDEX key) |
-| `ARBITRUM_SEPOLIA_RPC_URL` (or `RPC_URL`) | Optional | Server-side RPC; defaults to the public Arbitrum Sepolia RPC |
-| `CHAIN_ID` | Optional | Chain used to verify wallet-signed orders (default `421614`) |
+| `SODEX_API_KEY_NAME`, `SODEX_API_KEY_PRIVATE_KEY`, `USER_WALLET_ADDRESS` | Automatic trading | Cinder's own SoDEX account. Without them, Cinder's trades are simulated. Users never use these. |
+| `SODEX_MASTER_PRIVATE_KEY` | Setup only, on your own computer | Registering Cinder's SoDEX API key with `scripts/register-sodex-api-key.js`. Never put it on the server. |
+| `NEXT_PUBLIC_SODEX_NETWORK` | User trading | `testnet` or `mainnet` for the whole deployment; anything else means testnet |
+| `NEXT_PUBLIC_SODEX_BUILDER_ID`, `NEXT_PUBLIC_SODEX_BUILDER_FEE` | Builder fee | Cinder's SoDEX account ID and the fee on users' sells in tenths of a basis point (`50` = 0.05%). Leave the ID empty to charge nothing. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_BOT_USERNAME` | Telegram alerts | Bot alerts; `TELEGRAM_CHAT_ID` is the admin chat |
 | `TELEGRAM_WEBHOOK_SECRET` | Telegram alerts | Webhook authentication; must match the value used with `scripts/set-telegram-webhook.js` |
 | `AUTO_TRADE_ENABLED`, `MAX_ALLOCATION_PER_TRADE`, `STOP_LOSS_PERCENTAGE`, `COOLDOWN_HOURS`, `QTY_DECIMALS` | Optional | Risk settings. Auto-trading is off unless `AUTO_TRADE_ENABLED=true`. |
@@ -223,39 +222,16 @@ npm run worker
 
 ### Testnet & Live Trading
 
-Cinder targets **SoDEX testnet** (`SODEX_API_BASE_URL=https://testnet-gw.sodex.dev/api/v1/spot`). Auto-trading stays off unless `AUTO_TRADE_ENABLED=true`, and every automated trade still has to pass the risk gates: cooldown, max open positions, daily loss limit, kill switch, and a guard that blocks mainnet URLs outside production.
-
-### CNDR Token (`contracts/`)
-
-CNDR is a testnet ERC-20 on **Arbitrum Sepolia** at `0x6C64923FD6478D265A1b5a971c6bC59cB35A5FA7`. Each wallet can claim **10,000 CNDR per day** from its faucet (a normal transaction, so it needs a little Arbitrum Sepolia ETH). QuickTrade buys are paid in CNDR to the treasury, and sells are paid out from it.
-
-The contract has its own Hardhat project, separate from the app's dependencies:
-
-```bash
-cd contracts
-npm install
-npm test
-```
-
-Deploying a **new** copy resets every balance, so only do it deliberately:
-
-```bash
-cd contracts
-npx hardhat vars set DEPLOYER_PRIVATE_KEY
-npm run deploy:arbitrum-sepolia
-```
-
-Then set `NEXT_PUBLIC_CNDR_TOKEN_ADDRESS` to the new address and redeploy the app.
+`NEXT_PUBLIC_SODEX_NETWORK` picks **SoDEX testnet** (the default) or mainnet for the site, the users' trades and the worker together. Auto-trading stays off unless `AUTO_TRADE_ENABLED=true`, and every automated trade still has to pass the risk gates: cooldown, max open positions, daily loss limit, kill switch, and a guard that blocks mainnet outside production.
 
 ### 🧪 Tests & CI
 
 ```bash
-npm test                    # app tests (Vitest); database, LLM, SoDEX and chain calls are mocked
+npm test                    # app tests (Vitest); database, LLM and SoDEX calls are mocked
 npm run lint
-cd contracts && npm test    # contract tests (Hardhat)
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`) runs lint, the app tests, a production build and the contract tests on every pull request to `main`.
+GitHub Actions (`.github/workflows/ci.yml`) runs lint, the app tests and a production build on every pull request to `main`.
 
 ---
 
@@ -265,16 +241,11 @@ GitHub Actions (`.github/workflows/ci.yml`) runs lint, the app tests, a producti
 cinder/
 ├── README.md
 ├── .env.example
-├── .github/workflows/ci.yml          # Lint, tests, build, contract tests
+├── .github/workflows/ci.yml          # Lint, tests, build
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── API_INTEGRATION.md
 │   └── WORKER.md                     # Running the scheduler on an always-on host
-├── contracts/                        # Hardhat project (own package.json)
-│   ├── src/CinderToken.sol           # CNDR testnet token + faucet
-│   ├── test/CinderToken.js
-│   ├── scripts/deploy.js
-│   └── hardhat.config.js
 ├── migrations/
 │   ├── 0001_init.sql
 │   ├── 0002_add_user_address.sql
@@ -295,23 +266,26 @@ cinder/
     │       ├── stories/              # GET feed (+ throttled refresh), POST requires internal secret
     │       ├── stories/stream/       # Server-Sent Events
     │       ├── narrative/            # GET temperatures, POST requires internal secret
-    │       ├── trade/                # GET portfolio/prices, POST wallet-signed or internal trades
+    │       ├── trade/                # Cinder's own account: GET positions/prices, POST internal trades only
     │       ├── telegram-auth/        # Wallet-signed Telegram linking
     │       ├── webhook/              # Telegram webhook (secret required)
     │       └── market-update/
     ├── components/
     │   ├── wire/                     # StoryCard (escaped markdown), StoryFeed, charts
     │   ├── narrative/                # BubbleMap, Timeline, TemperatureGauge, ShiftAlert
-    │   ├── trading/                  # PortfolioView, QuickTrade, TradeHistory, RiskDashboard
+    │   ├── trading/                  # QuickTrade, PortfolioView, OpenOrders, TradeHistory, RiskDashboard
     │   └── shared/
-    ├── context/WalletContext.js      # Wallet connection, network switching, faucet
+    ├── context/WalletContext.js      # Wallet, the user's SoDEX account, Enable trading
     ├── engine/
     │   ├── narrative.js              # Narrative temperatures
     │   ├── shift-detector.js         # Regime shift detection
     │   └── trade-engine.js           # Risk gates, sizing, execution, stop-losses
     ├── lib/
     │   ├── sosovalue.js, sodex.js, openai.js, telegram.js
-    │   ├── cndr.js                   # Treasury, CNDR payment verification, payouts
+    │   ├── sodex-network.js          # Testnet or mainnet, builder settings
+    │   ├── sodex-signing.js          # EIP-712 payloads and signatures for SoDEX
+    │   ├── sodex-browser.js          # Browser client: account reads, trading key, orders
+    │   ├── sodex-orders.js           # Order sizing against market filters
     │   ├── secrets.js                # Constant-time secret checks
     │   ├── validator.js              # Fact-checks AI stories against the database
     │   ├── db.js, scheduler.js, rate-limiter.js, telegram-link.js
@@ -322,14 +296,16 @@ cinder/
 
 Fixes applied during the post-hackathon review.
 
-#### Trusted vs. wallet-signed requests
-`POST /api/stories` and `POST /api/narrative` require an `x-internal-api-secret` header matching `INTERNAL_API_SECRET`. `POST /api/trade` accepts either that header (trusted callers) or an EIP-712 order signature from the trading wallet. Secrets are compared in constant time.
+#### Who can trade what
+`POST /api/stories`, `POST /api/narrative` and `POST /api/trade` require an `x-internal-api-secret` header matching `INTERNAL_API_SECRET`, compared in constant time. `POST /api/trade` only trades Cinder's own account.
 
-#### Wallet-signed trades
-- **Replay protection:** the nonce is the signing time; orders signed more than 5 minutes ago, or submitted twice, are rejected.
-- **Server-side pricing:** fills and payouts use the server's SoDEX price, never the price in the request. Live mode refuses to trade on fallback prices.
-- **Sells:** the wallet must hold the position it's selling.
-- **Buys:** when CNDR is deployed, the on-chain CNDR payment to the treasury is verified, and each payment can only be used once.
+#### User trading
+- **No custody:** users' funds stay in their own SoDEX accounts. Orders are signed in the browser and go straight to SoDEX; Cinder's server never sees a user's key or order.
+- **Limited keys:** the browser's trading key can place and cancel orders only. Withdraw and transfer are disabled on SoDEX, and the key expires after 7 days.
+- **Exact fee approval:** users approve exactly the builder fee Cinder asks for, so the approval can't be used to charge more.
+
+#### Cinder's own trades
+- **Server-side pricing:** fills use the server's SoDEX price, never the price in the request. Live mode refuses to trade on fallback prices.
 - **No fake fills:** if a live SoDEX order fails, the trade is recorded and shown as *simulated*, not filled.
 
 #### Telegram

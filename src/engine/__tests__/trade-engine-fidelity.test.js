@@ -41,7 +41,8 @@ vi.mock('../../lib/sodex.js', () => ({
   }),
   getTicker: vi.fn().mockResolvedValue({ price: '60000.00' }),
   placeOrder: vi.fn().mockResolvedValue({ status: 'FILLED', orderId: 'sodex-order-123', price: '60000.00' }),
-  fetchAccountBalances: vi.fn().mockResolvedValue([{ asset: 'USDC', free: '1000.00' }])
+  fetchAccountBalances: vi.fn().mockResolvedValue([{ asset: 'USDC', free: '1000.00' }]),
+  getSymbolForPair: vi.fn().mockResolvedValue({ name: 'vBTC_vUSDC' })
 }));
 
 describe('Story Data Fidelity Validator Integration', () => {
@@ -60,15 +61,10 @@ describe('Story Data Fidelity Validator Integration', () => {
   it('triggers the template fallback path when LLM story contains mismatched inflow numbers', async () => {
     // 1. Setup mock database state
     // First query is in detectShift for oldestRecord (min time), return some date
-    // Second query is in trade-engine for wallet balances
-    // Third query in validator for etf_flows
-    // Fourth query in validator for sector_data
+    // Then the validator queries etf_flows and sector_data
     query.mockImplementation(async (sql, params) => {
       if (sql.includes('MIN(recorded_at)')) {
         return [{ earliest: new Date(Date.now() - 100 * 3600000).toISOString() }];
-      }
-      if (sql.includes('wallet_balances')) {
-        return [{ balance: '5000' }];
       }
       if (sql.includes('etf_flows')) {
         // Actual BTC net flow is $250.0M (250,000,000)

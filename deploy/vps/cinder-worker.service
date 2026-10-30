@@ -1,0 +1,51 @@
+[Unit]
+Description=Cinder scheduler worker (news, stories, trading, stop-losses)
+Documentation=https://github.com/Turnless/Cinder/blob/main/docs/WORKER.md
+After=network-online.target
+Wants=network-online.target
+# Stop retrying after 5 failed starts in 5 minutes (e.g. missing settings) instead of looping forever
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=cinder
+Group=cinder
+WorkingDirectory=/opt/cinder/app
+EnvironmentFile=/opt/cinder/.env.worker
+ExecStartPre=/opt/cinder/check-env.sh
+ExecStart=/usr/bin/node scripts/worker.js
+Restart=always
+RestartSec=10
+# The worker finishes running jobs on SIGTERM (up to WORKER_SHUTDOWN_GRACE_MS, 60s)
+KillSignal=SIGTERM
+TimeoutStopSec=90
+
+# Leave room for SSH and the system on a 1 GB server
+MemoryMax=768M
+
+# Sandboxing: the worker only needs to read its code and talk to the network
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

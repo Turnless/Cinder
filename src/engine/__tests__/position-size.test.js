@@ -12,6 +12,7 @@ vi.mock('../../lib/sodex.js', () => ({
   getTicker: vi.fn(),
   fetchAccountBalances: vi.fn(),
   getAccountState: vi.fn(),
+  getSymbolForPair: vi.fn().mockResolvedValue({ name: 'vBTC_vUSDC' }),
 }));
 
 vi.mock('../../lib/openai.js', () => ({

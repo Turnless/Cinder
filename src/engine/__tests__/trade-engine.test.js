@@ -37,7 +37,8 @@ vi.mock('../../lib/sodex.js', () => ({
   placeOrder: vi.fn(),
   getTicker: vi.fn(),
   fetchAccountBalances: vi.fn(),
-  getAccountState: vi.fn()
+  getAccountState: vi.fn(),
+  getSymbolForPair: vi.fn().mockResolvedValue({ name: 'vBTC_vUSDC' })
 }));
 
 // 6. Mock Telegram module
@@ -82,7 +83,7 @@ describe('Cinder Trade Execution Engine', () => {
     process.env.USER_WALLET_ADDRESS = '0x1234567890123456789012345678901234567890';
     process.env.SODEX_API_KEY_PRIVATE_KEY = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     process.env.SODEX_API_KEY_NAME = 'test-sodex-api-key-name';
-    process.env.SODEX_API_BASE_URL = 'https://testnet-gw.sodex.dev/api/v1/spot';
+    process.env.NEXT_PUBLIC_SODEX_NETWORK = 'testnet';
     process.env.VERCEL_ENV = 'production';
     process.env.NODE_ENV = 'production';
 
@@ -339,27 +340,27 @@ describe('Cinder Trade Execution Engine', () => {
 
     // Gate 6: Environment safety check
     describe('Gate 6: Environment Safety Separator', () => {
-      it('fails with STAGING_ENVIRONMENT_MAINNET_URL_BLOCKED if staging and mainnet base URL are mismatched', async () => {
+      it('fails with STAGING_ENVIRONMENT_MAINNET_URL_BLOCKED if staging is set to SoDEX mainnet', async () => {
         process.env.VERCEL_ENV = 'development';
-        process.env.SODEX_API_BASE_URL = 'https://mainnet-gw.sodex.dev/api/v1/spot';
+        process.env.NEXT_PUBLIC_SODEX_NETWORK = 'mainnet';
 
         const result = await runPreTradeChecks(defaultShift, defaultAccountState);
         expect(result.passed).toBe(false);
         expect(result.failedGates).toContain('STAGING_ENVIRONMENT_MAINNET_URL_BLOCKED');
       });
 
-      it('passes environmental block if mainnet URL is used in production', async () => {
+      it('passes environmental block if mainnet is used in production', async () => {
         process.env.VERCEL_ENV = 'production';
         process.env.NODE_ENV = 'production';
-        process.env.SODEX_API_BASE_URL = 'https://mainnet-gw.sodex.dev/api/v1/spot';
+        process.env.NEXT_PUBLIC_SODEX_NETWORK = 'mainnet';
 
         const result = await runPreTradeChecks(defaultShift, defaultAccountState);
         expect(result.failedGates).not.toContain('STAGING_ENVIRONMENT_MAINNET_URL_BLOCKED');
       });
 
-      it('passes environmental block if testnet URL is used in staging', async () => {
+      it('passes environmental block if testnet is used in staging', async () => {
         process.env.VERCEL_ENV = 'preview';
-        process.env.SODEX_API_BASE_URL = 'https://testnet-gw.sodex.dev/api/v1/spot';
+        process.env.NEXT_PUBLIC_SODEX_NETWORK = 'testnet';
 
         const result = await runPreTradeChecks(defaultShift, defaultAccountState);
         expect(result.failedGates).not.toContain('STAGING_ENVIRONMENT_MAINNET_URL_BLOCKED');
@@ -585,6 +586,7 @@ describe('Cinder Trade Execution Engine', () => {
         side: 'BUY',
         orderType: 'MARKET',
         quantity: '20000.0000',
+        funds: '3000.00',
         price: '0.00'
       });
 
@@ -770,5 +772,29 @@ describe('Cinder Trade Execution Engine', () => {
         positions: expect.any(Array)
       }));
     });
+  });
+});
+
+describe('pickTargetToken', () => {
+  it('buys the first coin of a narrative that SoDEX lists', async () => {
+    const { pickTargetToken } = await import('../trade-engine.js');
+    const { getSymbolForPair } = await import('../../lib/sodex.js');
+    getSymbolForPair.mockImplementation(async (pair) => {
+      if (['FET-USDC', 'OP-USDC', 'ARB-USDC'].includes(pair)) throw new Error('not listed');
+      return { name: pair };
+    });
+
+    expect(await pickTargetToken('NAR_04')).toBe('NVDA');
+    expect(await pickTargetToken('NAR_07')).toBe('LINK');
+    expect(await pickTargetToken('NAR_01')).toBe('BTC');
+    expect(await pickTargetToken('NAR_03')).toBe('USDC');
+    expect(await pickTargetToken('NAR_99')).toBe('BTC');
+  });
+
+  it('keeps the first choice when nothing is listed, so the trade stops at the price check', async () => {
+    const { pickTargetToken } = await import('../trade-engine.js');
+    const { getSymbolForPair } = await import('../../lib/sodex.js');
+    getSymbolForPair.mockRejectedValue(new Error('not listed'));
+    expect(await pickTargetToken('NAR_07')).toBe('OP');
   });
 });

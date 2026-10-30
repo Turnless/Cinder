@@ -34,14 +34,15 @@ A job that is still running when its next turn comes is **skipped**, never run t
 ## Environment variables
 
 Copy these from Vercel (Project → Settings → Environment Variables). The worker doesn't need the
-`NEXT_PUBLIC_*` variables, `TREASURY_PRIVATE_KEY` or `INTERNAL_API_SECRET`.
+`INTERNAL_API_SECRET` or the other `NEXT_PUBLIC_*` variables, but it does need `NEXT_PUBLIC_SODEX_NETWORK`.
 
 | Variable | Needed |
 |---|---|
 | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | **Yes.** Same database as the site. |
 | `SOSOVALUE_API_KEY` | **Yes** |
 | `OPENAI_API_KEY` (+ `OPENAI_BASE_URL`, `OPENAI_MODEL` if you use them) | **Yes** |
-| `SODEX_API_KEY_NAME`, `SODEX_API_KEY_PRIVATE_KEY`, `USER_WALLET_ADDRESS`, `SODEX_API_BASE_URL` | For trading and stop-losses |
+| `SODEX_API_KEY_NAME`, `SODEX_API_KEY_PRIVATE_KEY`, `USER_WALLET_ADDRESS` | For trading and stop-losses. Create the key with `scripts/register-sodex-api-key.js` on your own computer. |
+| `NEXT_PUBLIC_SODEX_NETWORK` | `testnet` or `mainnet`; must match the site. Testnet when unset. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | For alerts and the daily digest |
 | `AUTO_TRADE_ENABLED`, `MAX_ALLOCATION_PER_TRADE`, `STOP_LOSS_PERCENTAGE`, `COOLDOWN_HOURS`, `QTY_DECIMALS` | Risk settings (same values as Vercel) |
 | `EDGE_CONFIG`, `KILL_SWITCH_FAIL_CLOSED` | If you use the Edge Config kill switch |
@@ -76,27 +77,19 @@ No build step is needed. Configure the host to **restart the process if it exits
 
 **VPS (systemd)**
 
-```ini
-# /etc/systemd/system/cinder-worker.service
-[Unit]
-Description=Cinder scheduler worker
-After=network-online.target
+The server files live in `deploy/vps/`, so the VPS runs exactly what the repo says:
 
-[Service]
-WorkingDirectory=/opt/cinder
-EnvironmentFile=/opt/cinder/.env.worker
-ExecStart=/usr/bin/npm run worker
-Restart=always
-RestartSec=10
-KillSignal=SIGTERM
-TimeoutStopSec=90
+| File | Installed to | Purpose |
+|---|---|---|
+| `cinder-worker.service` | `/etc/systemd/system/` | Sandboxed service running `node scripts/worker.js` as the `cinder` user |
+| `check-env.sh` | `/opt/cinder/` | Runs before every start; refuses missing settings, the master wallet key, or mainnet without `ALLOW_MAINNET=true` |
+| `update.sh` | `/opt/cinder/` | Pulls `main`, installs dependencies and these files, restarts the worker |
+| `env.worker.example` | `/opt/cinder/.env.worker` | The settings to fill in (`chmod 600`) |
 
-[Install]
-WantedBy=multi-user.target
-```
+The code is a clone of the repo in `/opt/cinder/app`, owned by `cinder`. To deploy what is on `main`:
 
 ```bash
-sudo systemctl enable --now cinder-worker
+sudo /opt/cinder/update.sh
 journalctl -u cinder-worker -f
 ```
 
@@ -108,7 +101,7 @@ journalctl -u cinder-worker -f
 3. Leave it for a few hours. Each hour should log `Running hourly news fetch and narrative
    intelligence cycle` and either `Market is stable` or a detected shift.
 4. Check `/health` (if enabled): every job shows `lastError: null` and sensible `lastDurationMs`.
-5. Only then set `AUTO_TRADE_ENABLED=true` (keep `SODEX_API_BASE_URL` on testnet) and restart.
+5. Only then set `AUTO_TRADE_ENABLED=true` (keep `NEXT_PUBLIC_SODEX_NETWORK=testnet`) and restart.
 
 ## Stopping and pausing
 

@@ -1,288 +1,209 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { ethers } from 'ethers';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { getSodexNetwork, getBuilderConfig } from '../lib/sodex-network';
+import {
+  getPrimaryAccount,
+  getSpotBalances,
+  getBuilderApprovals,
+  loadTradingKey,
+  forgetTradingKey,
+  createTradingKey,
+  approveBuilderFee
+} from '../lib/sodex-browser';
+import { approvedBuilderFee, availableOf } from '../lib/sodex-orders';
+
+const network = getSodexNetwork();
+const builder = getBuilderConfig();
+
+/**
+ * The user's SoDEX account as this browser sees it.
+ * status: 'idle' (no wallet), 'loading', 'ready', 'missing' (wallet has no SoDEX account yet) or 'error'.
+ */
+const EMPTY_ACCOUNT = { status: 'idle', accountID: null, balances: [], usdc: 0, builderFee: 0, error: null };
 
 const WalletContext = createContext({
+  network,
+  builder,
   isConnected: false,
   walletChecked: false,
   walletAddress: null,
-  balance: 0,
-  ethBalance: null,
   isConnecting: false,
-  isClaiming: false,
+  account: EMPTY_ACCOUNT,
+  tradingKey: null,
+  tradingReady: false,
   connectWallet: () => {},
   disconnectWallet: () => {},
-  claimFaucet: () => {},
+  refreshAccount: () => {},
+  enableTrading: async () => ({ ok: false }),
+  forgetTradingKey: () => {}
 });
 
 export function WalletProvider({ children }) {
-  const [isConnected, setIsConnected] = useState(false);
   const [walletChecked, setWalletChecked] = useState(false);
   const [walletAddress, setWalletAddress] = useState(null);
-  const [balance, setBalance] = useState(0); // CNDR balance
-  const [isDemoBalance, setIsDemoBalance] = useState(false); // true when no CNDR contract is configured (localStorage balance)
-  const [ethBalance, setEthBalance] = useState(null); // Real native ETH balance
   const [isConnecting, setIsConnecting] = useState(false);
-  const [isClaiming, setIsClaiming] = useState(false);
+  const [account, setAccount] = useState(EMPTY_ACCOUNT);
+  const [tradingKey, setTradingKey] = useState(null);
+  // Answers for an address that is no longer connected are dropped
+  const currentAddress = useRef(null);
 
-  // Helper: Request wallet to switch or add Arbitrum Sepolia (Chain ID 421614 / 0x66eee)
-  const ensureCorrectNetwork = async () => {
-    if (typeof window === 'undefined' || !window.ethereum) return false;
-    
-    const targetChainId = '0x66eee'; // 421614 in hex
-    
+  const loadAccount = useCallback(async (address, { quiet = false } = {}) => {
+    if (!address) return;
+    if (!quiet) setAccount(prev => ({ ...EMPTY_ACCOUNT, status: 'loading', accountID: prev.accountID }));
+    setTradingKey(loadTradingKey(address, network));
+
     try {
-      const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
-      if (currentChainId === targetChainId) {
-        return true;
+      const accounts = await getPrimaryAccount(address, network);
+      if (currentAddress.current !== address) return;
+      if (!accounts.ok) {
+        const missing = /user not found/i.test(accounts.error || '');
+        setAccount({ ...EMPTY_ACCOUNT, status: missing ? 'missing' : 'error', error: accounts.error });
+        return;
       }
-      
-      // Request wallet to switch network
-      await window.ethereum.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: targetChainId }]
+
+      const accountID = accounts.json.data.primaryAccountID;
+      const [balances, approvals] = await Promise.all([
+        getSpotBalances(address, accountID, network),
+        builder ? getBuilderApprovals(address, network) : Promise.resolve(null)
+      ]);
+      if (currentAddress.current !== address) return;
+
+      const list = balances.ok ? balances.json.data?.balances || [] : [];
+      setAccount({
+        status: balances.ok ? 'ready' : 'error',
+        accountID,
+        balances: list,
+        usdc: availableOf(list, 'vUSDC'),
+        builderFee: builder ? approvedBuilderFee(approvals, builder.id) : 0,
+        error: balances.ok ? null : balances.error
       });
-      return true;
     } catch (err) {
-      // Code 4902 indicates that the chain has not been added to the wallet
-      // Rabby sometimes throws general errors, so we catch chain-addition logic robustly
-      if (err.code === 4902 || (err.message && err.message.includes("Unrecognized chain ID"))) {
-        try {
-          await window.ethereum.request({
-            method: 'wallet_addEthereumChain',
-            params: [{
-              chainId: targetChainId,
-              chainName: 'Arbitrum Sepolia',
-              nativeCurrency: {
-                name: 'Arbitrum ETH',
-                symbol: 'ETH',
-                decimals: 18
-              },
-              rpcUrls: ['https://sepolia-rollup.arbitrum.io/rpc'],
-              blockExplorerUrls: ['https://sepolia.arbiscan.io']
-            }]
-          });
-          return true;
-        } catch (addError) {
-          console.error('Error adding Arbitrum Sepolia chain to wallet:', addError);
-          return false;
-        }
-      }
-      console.error('Error switching to Arbitrum Sepolia network:', err);
-      // Alert the user to switch manually if automated request fails or is rejected
-      alert('Please switch your wallet network to Arbitrum Sepolia to continue.');
-      return false;
+      if (currentAddress.current !== address) return;
+      setAccount({ ...EMPTY_ACCOUNT, status: 'error', error: err.message || 'SoDEX could not be reached.' });
     }
-  };
+  }, []);
 
-  // Sync RPC data for a specific connected address
-  const syncWalletData = async (address) => {
-    if (typeof window === 'undefined' || !window.ethereum) return;
-    try {
-      // 1. Fetch real native ETH balance
-      const hexBalance = await window.ethereum.request({
-        method: 'eth_getBalance',
-        params: [address, 'latest']
-      });
-      const eth = parseFloat((parseInt(hexBalance, 16) / 1e18).toFixed(4));
-      setEthBalance(eth);
-
-      // 2. Fetch CNDR token balance from the deployed contract (if address is configured in env)
-      const tokenAddress = process.env.NEXT_PUBLIC_CNDR_TOKEN_ADDRESS;
-      if (tokenAddress && tokenAddress !== '0x...' && tokenAddress !== '') {
-        const provider = new ethers.providers.Web3Provider(window.ethereum);
-        const abi = ["function balanceOf(address account) external view returns (uint256)"];
-        const contract = new ethers.Contract(tokenAddress, abi, provider);
-        const cndrWei = await contract.balanceOf(address);
-        const cndrEth = parseFloat(ethers.utils.formatEther(cndrWei));
-        setBalance(cndrEth);
-        setIsDemoBalance(false);
-      } else {
-        // Fallback to local simulated balance if no contract address is set
-        const key = `cinder_cndr_balance_${address.toLowerCase()}`;
-        let cndr = localStorage.getItem(key);
-        if (cndr === null) {
-          cndr = '500'; // Default initial test tokens
-          localStorage.setItem(key, cndr);
-        }
-        setBalance(parseFloat(cndr));
-        setIsDemoBalance(true);
-      }
-    } catch (err) {
-      console.error('Error syncing real Web3 wallet RPC data:', err);
+  const selectAddress = useCallback((address) => {
+    currentAddress.current = address;
+    setWalletAddress(address);
+    if (address) {
+      loadAccount(address);
+    } else {
+      setAccount(EMPTY_ACCOUNT);
+      setTradingKey(null);
     }
-  };
+  }, [loadAccount]);
 
-  // Check if wallet is already pre-authorized on mount
+  // Pick up a wallet that already approved this site
   useEffect(() => {
-    const initWeb3Wallet = async () => {
+    const init = async () => {
       if (typeof window !== 'undefined' && window.ethereum) {
         try {
           const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-          if (accounts.length > 0) {
-            const address = accounts[0];
-            setWalletAddress(address);
-            setIsConnected(true);
-            await syncWalletData(address);
-          }
+          if (accounts.length > 0) selectAddress(accounts[0]);
         } catch (err) {
           console.error('Error checking pre-authorized accounts:', err);
         }
       }
       setWalletChecked(true);
     };
-    initWeb3Wallet();
-  }, []);
+    init();
+  }, [selectAddress]);
 
-  // Listen for wallet accountsChanged and chainChanged events
+  // Follow account switches in the wallet. Orders are signed by the trading key and SoDEX accepts
+  // wallet signatures on any chain, so the wallet's network does not matter.
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.ethereum) return;
-
-    const handleAccounts = async (accounts) => {
-      if (accounts.length === 0) {
-        // User disconnected their wallet
-        setIsConnected(false);
-        setWalletAddress(null);
-        setBalance(0);
-        setEthBalance(null);
-      } else {
-        const address = accounts[0];
-        setWalletAddress(address);
-        setIsConnected(true);
-        await syncWalletData(address);
-      }
-    };
-
-    const handleChain = () => {
-      window.location.reload();
-    };
-
+    if (typeof window === 'undefined' || !window.ethereum?.on) return undefined;
+    const handleAccounts = (accounts) => selectAddress(accounts.length > 0 ? accounts[0] : null);
     window.ethereum.on('accountsChanged', handleAccounts);
-    window.ethereum.on('chainChanged', handleChain);
-
-    return () => {
-      if (window.ethereum.removeListener) {
-        window.ethereum.removeListener('accountsChanged', handleAccounts);
-        window.ethereum.removeListener('chainChanged', handleChain);
-      }
-    };
-  }, []);
+    return () => window.ethereum.removeListener?.('accountsChanged', handleAccounts);
+  }, [selectAddress]);
 
   const connectWallet = async () => {
     if (typeof window === 'undefined') return;
-    
     if (!window.ethereum) {
-      alert('No Web3 wallet extension detected. Please install a compatible browser wallet (like Rabby or MetaMask) to use Cinder.');
+      alert('No browser wallet found. Install MetaMask or Rabby to use Cinder.');
       return;
     }
-
     setIsConnecting(true);
     try {
-      // 1. Ensure wallet is set to Arbitrum Sepolia before asking for account permissions
-      const networkOk = await ensureCorrectNetwork();
-      if (!networkOk) {
-        setIsConnecting(false);
-        return;
-      }
-
-      // 2. Request accounts
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      if (accounts.length > 0) {
-        const address = accounts[0];
-        setWalletAddress(address);
-        setIsConnected(true);
-        await syncWalletData(address);
-      }
+      if (accounts.length > 0) selectAddress(accounts[0]);
     } catch (err) {
-      console.error('Error connecting to Web3 provider:', err);
-      if (err.code === 4001) {
-        alert('Connection request rejected. Please approve the connection in your wallet.');
-      }
+      console.error('Error connecting to the wallet:', err);
+      if (err.code === 4001) alert('You declined the connection. Approve it in your wallet to continue.');
     } finally {
       setIsConnecting(false);
     }
   };
 
-  const disconnectWallet = () => {
-    setIsConnected(false);
-    setWalletAddress(null);
-    setBalance(0);
-    setEthBalance(null);
-  };
+  const disconnectWallet = () => selectAddress(null);
 
-  const claimFaucet = async () => {
-    if (!isConnected || !walletAddress) return;
-    setIsClaiming(true);
+  const refreshAccount = useCallback(() => {
+    if (currentAddress.current) return loadAccount(currentAddress.current, { quiet: true });
+    return undefined;
+  }, [loadAccount]);
 
-    // Ensure wallet is set to Arbitrum Sepolia before sending the transaction
-    const networkOk = await ensureCorrectNetwork();
-    if (!networkOk) {
-      setIsClaiming(false);
-      return;
-    }
-
-    const tokenAddress = process.env.NEXT_PUBLIC_CNDR_TOKEN_ADDRESS;
-    if (!tokenAddress || tokenAddress === '0x...' || tokenAddress === '') {
-      // Fallback to simulated claim if no contract deployed yet
-      setTimeout(() => {
-        const key = `cinder_cndr_balance_${walletAddress.toLowerCase()}`;
-        const currentCndr = parseFloat(localStorage.getItem(key) || 0);
-        const newCndr = currentCndr + 10000;
-        localStorage.setItem(key, newCndr.toString());
-        setBalance(newCndr);
-        setIsClaiming(false);
-      }, 1500);
-      return;
-    }
+  /**
+   * Asks the wallet for what trading needs and is not yet in place: a trading key for this
+   * browser, then Cinder's builder fee. Each is one wallet signature.
+   * @returns {Promise<{ok: boolean, error?: string}>}
+   */
+  const enableTrading = async () => {
+    const address = currentAddress.current;
+    if (!address || account.status !== 'ready') return { ok: false, error: 'Your SoDEX account is not loaded yet.' };
 
     try {
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const signer = provider.getSigner();
-      
-      // Claims are a normal transaction from the user's wallet (needs a little Arbitrum Sepolia ETH for gas).
-      // The earlier ERC-4337 "gasless" path used the wallet address itself as the UserOperation sender,
-      // which only works for smart-contract accounts, and exposed the bundler/paymaster API key to the browser.
-      const abi = ["function claimFaucet() external"];
-      const contract = new ethers.Contract(tokenAddress, abi, signer);
-
-      // Trigger the real on-chain transaction
-      const tx = await contract.claimFaucet();
-      
-      // Wait for it to be mined on Arbitrum Sepolia
-      await tx.wait();
-
-      // Sync the new on-chain CNDR and native ETH balances
-      await syncWalletData(walletAddress);
-    } catch (err) {
-      console.error('Error claiming on-chain faucet:', err);
-      
-      // Friendly messaging for the 1-day cooldown revert condition
-      if (err.message && err.message.includes("Cooldown active")) {
-        alert("Faucet claim rejected: Cooldown active. You can only claim once every 24 hours.");
-      } else {
-        alert(err.reason || err.message || "Transaction failed. Make sure you are on Arbitrum Sepolia.");
+      if (!loadTradingKey(address, network)) {
+        const created = await createTradingKey({ address, accountID: account.accountID, network });
+        if (!created.ok) return { ok: false, error: `SoDEX refused the trading key: ${created.error}` };
+        setTradingKey(loadTradingKey(address, network));
       }
-    } finally {
-      setIsClaiming(false);
+
+      if (builder && account.builderFee < builder.fee) {
+        const approved = await approveBuilderFee({
+          address,
+          accountID: account.accountID,
+          builderID: builder.id,
+          maxFeeRate: builder.maxFee,
+          network
+        });
+        if (!approved.ok) return { ok: false, error: `SoDEX refused the fee approval: ${approved.error}` };
+        setAccount(prev => ({ ...prev, builderFee: builder.maxFee }));
+      }
+      return { ok: true };
+    } catch (err) {
+      const declined = err.code === 4001 || err.code === 'ACTION_REJECTED';
+      return { ok: false, error: declined ? 'You declined the signature, so trading is not enabled.' : err.message };
     }
   };
+
+  const forgetKey = () => {
+    if (!currentAddress.current) return;
+    forgetTradingKey(currentAddress.current, network);
+    setTradingKey(null);
+  };
+
+  const builderReady = !builder || account.builderFee >= builder.fee;
 
   return (
     <WalletContext.Provider
       value={{
-        isConnected,
+        network,
+        builder,
+        isConnected: Boolean(walletAddress),
         walletChecked,
         walletAddress,
-        balance,
-        isDemoBalance,
-        ethBalance,
         isConnecting,
-        isClaiming,
+        account,
+        tradingKey,
+        tradingReady: account.status === 'ready' && Boolean(tradingKey) && builderReady,
         connectWallet,
         disconnectWallet,
-        claimFaucet,
-        ensureCorrectNetwork,
+        refreshAccount,
+        enableTrading,
+        forgetTradingKey: forgetKey
       }}
     >
       {children}

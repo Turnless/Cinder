@@ -3,6 +3,7 @@ import { query } from '../../../lib/db';
 import { updateNarrativeTemperatures } from '../../../engine/narrative';
 import { rateLimit } from '../../../lib/rate-limiter';
 import { hasValidInternalSecret } from '../../../lib/secrets';
+import { getRiskConfig } from '../../../lib/risk-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,7 +76,9 @@ export async function GET(request) {
       success: true,
       temperatures,
       shifts: formattedShifts,
-      history
+      history,
+      // Public, display-only: lets the landing page show the live trading limits
+      riskConfig: getRiskConfig()
     });
   } catch (error) {
     console.error('Error fetching narrative details in API:', error);

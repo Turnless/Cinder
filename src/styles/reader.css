@@ -1,0 +1,212 @@
+/* ============================================================
+   Story reader (opened from the feed and story cards).
+   Builds on the .story-modal-* layout in wire.css.
+   ============================================================ */
+
+.story-modal-content.reader {
+  max-width: 760px;
+  border-radius: var(--radius-lg);
+  border-color: var(--color-iron);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
+.reader .story-modal-header {
+  background: none;
+  border-bottom-color: var(--rule);
+}
+
+.reader .story-modal-back-btn:focus-visible {
+  outline: 2px solid var(--color-wire-gold);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.reader-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  font-size: 0.85rem;
+  color: var(--text-faint);
+}
+
+.reader-kind {
+  color: var(--text-muted);
+}
+
+.reader-kind.is-breaking {
+  color: var(--color-shift-red);
+}
+
+/* ---------- Article (shared by the reader pop-up and the story page) ---------- */
+
+.article-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 0.88rem;
+  color: var(--text-faint);
+  margin-bottom: 14px;
+}
+
+.article-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.7rem, 3.6vw, 2.6rem);
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+  color: var(--color-linen);
+}
+
+.article-standfirst {
+  margin-top: 16px;
+  font-size: 1.1rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 40rem;
+}
+
+.reader-body {
+  font-size: 1rem;
+  line-height: 1.75;
+  color: rgba(236, 223, 204, 0.9);
+  max-width: 40rem;
+}
+
+.reader-body p,
+.reader-body ul,
+.reader-body ol {
+  margin-bottom: 18px;
+}
+
+.reader-body h1,
+.reader-body h2,
+.reader-body h3,
+.reader-body h4 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-linen);
+  margin: 32px 0 12px;
+}
+
+.reader-body h1 { font-size: 1.5rem; }
+.reader-body h2 { font-size: 1.3rem; }
+.reader-body h3 { font-size: 1.12rem; }
+.reader-body h4 { font-size: 1rem; }
+
+.reader-body ul {
+  list-style: disc;
+  padding-left: 1.2rem;
+}
+
+.reader-body li + li {
+  margin-top: 6px;
+}
+
+.reader-body strong {
+  color: var(--color-linen);
+  font-weight: 600;
+}
+
+.reader-body code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+.reader-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.reader-body th,
+.reader-body td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+}
+
+.reader-body th {
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.reader-trade {
+  margin: 24px 0 0;
+  padding: 14px 16px;
+  border-left: 2px solid var(--color-wire-gold);
+  background: rgba(60, 61, 55, 0.22);
+  display: grid;
+  gap: 4px;
+}
+
+.reader-trade dt {
+  font-size: 0.82rem;
+  color: var(--text-faint);
+}
+
+.reader-trade dd {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--color-linen);
+}
+
+.reader-body {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--rule);
+}
+
+.reader-chart {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--color-iron);
+  border-radius: var(--radius-md);
+}
+
+.reader-chart-loading {
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  color: var(--text-faint);
+}
+
+.reader-narratives {
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+}
+
+.reader-narratives h2 {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-linen);
+}
+
+.reader-narratives ul {
+  margin-top: 12px;
+  display: grid;
+  gap: 6px 32px;
+}
+
+@media (min-width: 640px) {
+  .reader-narratives ul {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.reader-narratives li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.reader-narrative-value {
+  font-family: var(--font-mono);
+  color: var(--color-linen);
+}

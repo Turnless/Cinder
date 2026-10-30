@@ -1,650 +1,389 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ethers } from 'ethers';
 import { useWallet } from '../../context/WalletContext';
+import { getSpotSymbols, getSpotTicker, placeSpotOrder, newClientOrderId } from '../../lib/sodex-browser';
+import {
+  tradableMarkets,
+  marketLabels,
+  availableOf,
+  prepareSpotOrder,
+  batchError,
+  formatFeeRate
+} from '../../lib/sodex-orders';
+import '../../styles/portfolio-page.css';
 
-export default function QuickTrade({ onTradeSuccess }) {
-  // Global Web3 Wallet Context
-  const { walletAddress: globalWalletAddress, connectWallet: globalConnect, isConnecting: globalConnecting, ensureCorrectNetwork } = useWallet();
+const DEFAULT_MARKET = 'vBTC_vUSDC';
 
-  // Order params
-  const [pair, setPair] = useState('BTC-USDC');
-  const [side, setSide] = useState('buy');
-  const [orderType, setOrderType] = useState('market');
-  const [quantity, setQuantity] = useState('');
-  const [price, setPrice] = useState('');
-  const [stopLossPercentage, setStopLossPercentage] = useState(8);
-  const [useStopLoss, setUseStopLoss] = useState(true);
+const formatAmount = (n) => parseFloat(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const formatQuantity = (n) => parseFloat(n || 0).toLocaleString(undefined, { maximumFractionDigits: 8 });
 
-  // Flow control states
-  const [step, setStep] = useState('input'); // 'input', 'review', 'signing', 'success', 'error'
-  const [localWalletAddress, setLocalWalletAddress] = useState('');
-  const [isLocalConnecting, setIsLocalConnecting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [executionResult, setExecutionResult] = useState(null);
-  const [loading, setLoading] = useState(false);
+/**
+ * Asks the wallet for the approvals trading needs: a trading key for this browser and,
+ * when Cinder charges a builder fee, approval of that fee.
+ */
+function EnableTrading() {
+  const { network, builder, account, tradingKey, enableTrading } = useWallet();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
-  // Live Price feed state
-  const [livePrice, setLivePrice] = useState(null);
-  const [fetchingPrice, setFetchingPrice] = useState(false);
+  const needsKey = !tradingKey;
+  const needsFee = Boolean(builder) && account.builderFee < builder.fee;
+  const signatures = Number(needsKey) + Number(needsFee);
 
-  const activeWalletAddress = globalWalletAddress || localWalletAddress;
-  const isConnecting = globalConnecting || isLocalConnecting;
-
-  // Poll for the live price of the selected pair
-  useEffect(() => {
-    let isMounted = true;
-    const fetchLivePrice = async () => {
-      if (!isMounted) return;
-      setFetchingPrice(true);
-      try {
-        const res = await fetch(`/api/trade?ticker=${pair}`);
-        const data = await res.json();
-        if (data.success && isMounted) {
-          setLivePrice(data.price);
-          // If orderType is market, automatically fill the price field for EIP-712 hashing
-          if (orderType === 'market') {
-            setPrice(data.price);
-          }
-        }
-      } catch (err) {
-        console.error('[ERROR] Failed to fetch live price in QuickTrade:', err);
-      } finally {
-        if (isMounted) setFetchingPrice(false);
-      }
-    };
-
-    fetchLivePrice();
-    const interval = setInterval(fetchLivePrice, 10000); // refresh every 10s
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, [pair, orderType]);
-
-  const handleConnectWallet = async () => {
-    if (globalConnect) {
-      await globalConnect();
-      return;
-    }
-    
-    if (typeof window === 'undefined' || !window.ethereum) {
-      alert('MetaMask or another EVM wallet was not detected in this browser.');
-      return;
-    }
-    setIsLocalConnecting(true);
-    try {
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const accounts = await provider.send('eth_requestAccounts', []);
-      setLocalWalletAddress(accounts[0]);
-    } catch (e) {
-      console.error(e);
-      alert('Failed to connect wallet: ' + e.message);
-    } finally {
-      setIsLocalConnecting(false);
-    }
-  };
-
-  const handleReviewOrder = () => {
-    if (!quantity || parseFloat(quantity) <= 0) {
-      alert('Please enter a valid quantity.');
-      return;
-    }
-    if (orderType === 'limit' && (!price || parseFloat(price) <= 0)) {
-      alert('Please enter a valid limit price.');
-      return;
-    }
-    setStep('review');
-  };
-
-  const handleExecuteTrade = async () => {
-    setStep('signing');
-    setLoading(true);
-    setErrorMessage('');
-
-    try {
-      // The server fills at its own price; this is only used for the CNDR payment and the signed limit
-      const finalPrice = orderType === 'market' ? livePrice : price;
-      if (!finalPrice || parseFloat(finalPrice) <= 0) {
-        throw new Error('Live price is unavailable right now. Please wait a moment and try again.');
-      }
-
-      const slPrice = useStopLoss
-        ? (side === 'buy'
-            ? (parseFloat(finalPrice) * (1 - stopLossPercentage / 100)).toFixed(2)
-            : (parseFloat(finalPrice) * (1 + stopLossPercentage / 100)).toFixed(2)
-          )
-        : null;
-
-      if (!activeWalletAddress) {
-        throw new Error('Wallet not connected. Please connect your wallet first.');
-      }
-
-      // The server verifies signatures against Arbitrum Sepolia; switch before creating the provider
-      if (ensureCorrectNetwork) {
-        const networkOk = await ensureCorrectNetwork();
-        if (!networkOk) {
-          throw new Error('Please switch your wallet to Arbitrum Sepolia to trade.');
-        }
-      }
-
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const signer = provider.getSigner();
-      const network = await provider.getNetwork();
-
-      // 1. Sign the order first, so rejecting the signature never costs CNDR
-      const domain = {
-        name: 'spot',
-        version: '1',
-        chainId: network.chainId,
-        verifyingContract: '0x0000000000000000000000000000000000000000'
-      };
-
-      const types = {
-        ExchangeAction: [
-          { name: 'payloadHash', type: 'bytes32' },
-          { name: 'nonce', type: 'uint64' }
-        ]
-      };
-
-      const orderParams = {
-        pair,
-        side,
-        orderType,
-        quantity: String(quantity),
-        price: String(finalPrice),
-        stopPrice: slPrice ? String(slPrice) : '0.0'
-      };
-
-      const payloadJson = JSON.stringify({ type: 'newOrder', params: orderParams });
-      const payloadHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(payloadJson));
-      // Signing time doubles as the nonce; the server rejects orders signed more than 5 minutes ago
-      const nonce = Date.now();
-
-      const message = { payloadHash, nonce };
-      const signature = await signer._signTypedData(domain, types, message);
-
-      // 2. BUY: pay CNDR to the treasury on-chain; the server verifies this transfer
-      let txHash = null;
-      const tokenAddress = process.env.NEXT_PUBLIC_CNDR_TOKEN_ADDRESS;
-      if (side === 'buy' && tokenAddress && tokenAddress !== '0x...' && tokenAddress !== '') {
-        const cost = parseFloat(quantity) * parseFloat(finalPrice);
-        const tokenAbi = [
-          "function transfer(address to, uint256 amount) returns (bool)",
-          "function balanceOf(address owner) view returns (uint256)"
-        ];
-        const tokenContract = new ethers.Contract(tokenAddress, tokenAbi, signer);
-
-        // Verify user has sufficient CNDR balance
-        const walletBal = await tokenContract.balanceOf(activeWalletAddress);
-        const formattedBal = parseFloat(ethers.utils.formatUnits(walletBal, 18));
-        if (formattedBal < cost) {
-          throw new Error(`Insufficient CNDR balance. Required: ${cost.toFixed(2)} CNDR. Your balance: ${formattedBal.toFixed(2)} CNDR. Please claim CNDR from the faucet above.`);
-        }
-
-        // Treasury address comes from the server; never fall back to a hard-coded address
-        const masterRes = await fetch('/api/trade?masterAddress=true');
-        const masterData = await masterRes.json();
-        if (!masterData.success || !masterData.masterAddress) {
-          throw new Error(masterData.error || 'Trading treasury is not configured. Please try again later.');
-        }
-
-        setErrorMessage('Please confirm the CNDR transfer in your wallet...');
-        const tx = await tokenContract.transfer(masterData.masterAddress, ethers.utils.parseUnits(cost.toFixed(6), 18));
-        setErrorMessage('Waiting for CNDR transfer transaction to be mined...');
-        await tx.wait();
-        txHash = tx.hash;
-      }
-
-      // 3. Submit the signed order (with the payment proof for buys)
-      setErrorMessage('Submitting signed order...');
-
-      const response = await fetch('/api/trade', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          pair,
-          side,
-          orderType,
-          quantity,
-          price: finalPrice,
-          stopLossPrice: slPrice,
-          clientWallet: activeWalletAddress,
-          signature,
-          nonce,
-          txHash
-        }),
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        setExecutionResult(data);
-        setStep('success');
-        if (onTradeSuccess) onTradeSuccess();
-      } else {
-        // CNDR was already sent; show the payment hash so the transfer can be traced
-        const paymentNote = txHash ? ` (CNDR payment tx: ${txHash})` : '';
-        throw new Error((data.error || 'Server rejected order execution.') + paymentNote);
-      }
-    } catch (err) {
-      console.error(err);
-      setErrorMessage(err.message || 'Signature rejected or trade failed risk gates checks.');
-      setStep('error');
-    } finally {
-      setLoading(false);
-    }
+  const handleEnable = async () => {
+    setBusy(true);
+    setError('');
+    const result = await enableTrading();
+    if (!result.ok) setError(result.error);
+    setBusy(false);
   };
 
   return (
-    <div className="quick-trade clay-glass" style={{ padding: 'var(--space-lg)', borderRadius: 'var(--radius-lg)' }}>
-      <div className="portfolio-card-header">
-        <div>
-          <h3 className="section-heading" style={{ fontSize: '1.25rem' }}>
-            Quick Trade Execution
-          </h3>
-          <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', color: 'var(--color-sage)', marginTop: '2px' }}>
-            Place manual orders with EIP-712 client signing
-          </p>
-        </div>
-        
-        {activeWalletAddress ? (
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', backgroundColor: 'rgba(74, 222, 128, 0.08)', color: 'var(--color-pulse-green)', border: '1px solid rgba(74, 222, 128, 0.25)', padding: '4px 10px', borderRadius: 'var(--radius-full)' }}>
-            Connected: {activeWalletAddress.slice(0, 6)}...{activeWalletAddress.slice(-4)}
-          </span>
-        ) : (
-          <button
-            onClick={handleConnectWallet}
-            disabled={isConnecting}
-            className="btn-hero-secondary"
-            style={{ fontSize: '0.68rem', padding: '6px 12px', borderRadius: 'var(--radius-full)' }}
-          >
-            {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-          </button>
+    <div className="qt-form">
+      <h3 className="qt-subtitle">Enable trading</h3>
+      <p className="qt-note">
+        {signatures === 1
+          ? 'Your wallet signs one request. It costs no gas.'
+          : `Your wallet signs ${signatures} requests. Neither costs gas.`}
+      </p>
+      <ul className="qt-list">
+        {needsKey && (
+          <li>
+            A trading key kept in this browser. It places and cancels orders on your {network.label} account
+            for 7 days and can never withdraw or move your funds.
+          </li>
         )}
-      </div>
-
-      <AnimatePresence mode="wait">
-        {step === 'input' && (
-          <motion.div
-            key="input-form"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
-          >
-            {/* BUY / SELL Switch */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', backgroundColor: 'var(--color-obsidian)', padding: '4px', borderRadius: 'var(--radius-md)', border: '1px solid var(--glass-border)' }}>
-              <button
-                type="button"
-                onClick={() => setSide('buy')}
-                style={{
-                  border: 'none',
-                  padding: '8px 0',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  backgroundColor: side === 'buy' ? 'var(--color-pulse-green)' : 'transparent',
-                  color: side === 'buy' ? 'var(--color-obsidian)' : 'var(--color-sage)',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                BUY / LONG
-              </button>
-              <button
-                type="button"
-                onClick={() => setSide('sell')}
-                style={{
-                  border: 'none',
-                  padding: '8px 0',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  backgroundColor: side === 'sell' ? 'var(--color-shift-red)' : 'transparent',
-                  color: side === 'sell' ? 'var(--color-linen)' : 'var(--color-sage)',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                SELL / SHORT
-              </button>
-            </div>
-
-            {/* Asset Pair Selection */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-sage)' }}>Trading Asset Pair</label>
-                {livePrice && (
-                  <span style={{ fontSize: '0.75rem', color: 'var(--color-pulse-green)', fontFamily: 'var(--font-mono)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span className="live-dot" style={{ display: 'inline-block', width: '6px', height: '6px', backgroundColor: 'var(--color-pulse-green)', borderRadius: '50%', animation: 'pulse 1.5s infinite' }}></span>
-                    Live Price: ${parseFloat(livePrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC
-                  </span>
-                )}
-              </div>
-              <select
-                value={pair}
-                onChange={(e) => setPair(e.target.value)}
-                style={{
-                  backgroundColor: 'var(--color-iron)',
-                  border: '1px solid var(--glass-border)',
-                  color: 'var(--color-linen)',
-                  padding: '10px',
-                  borderRadius: 'var(--radius-md)',
-                  fontFamily: 'var(--font-body)',
-                  fontSize: '0.85rem',
-                  outline: 'none'
-                }}
-              >
-                <option value="BTC-USDC">BTC-USDC (Bitcoin)</option>
-                <option value="ETH-USDC">ETH-USDC (Ethereum)</option>
-                <option value="SOL-USDC">SOL-USDC (Solana)</option>
-                <option value="UNI-USDC">UNI-USDC (Uniswap)</option>
-                <option value="AAVE-USDC">AAVE-USDC (Aave)</option>
-              </select>
-            </div>
-
-            {/* Order Type and Quantity */}
-            <div className="portfolio-grid-cols-2">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-sage)' }}>Order Type</label>
-                <select
-                  value={orderType}
-                  onChange={(e) => setOrderType(e.target.value)}
-                  style={{
-                    backgroundColor: 'var(--color-iron)',
-                    border: '1px solid var(--glass-border)',
-                    color: 'var(--color-linen)',
-                    padding: '10px',
-                    borderRadius: 'var(--radius-md)',
-                    fontFamily: 'var(--font-body)',
-                    fontSize: '0.85rem',
-                    outline: 'none'
-                  }}
-                >
-                  <option value="market">Market Order</option>
-                  <option value="limit">Limit Order</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-sage)' }}>Quantity</label>
-                <input
-                  type="number"
-                  placeholder="0.00"
-                  step="any"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  style={{
-                    backgroundColor: 'var(--color-iron)',
-                    border: '1px solid var(--glass-border)',
-                    color: 'var(--color-linen)',
-                    padding: '10px',
-                    borderRadius: 'var(--radius-md)',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '0.85rem',
-                    outline: 'none'
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Limit Price */}
-            {orderType === 'limit' && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}
-              >
-                <label style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-sage)' }}>Limit Price (USDC)</label>
-                <input
-                  type="number"
-                  placeholder="0.00"
-                  step="any"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  style={{
-                    backgroundColor: 'var(--color-iron)',
-                    border: '1px solid var(--glass-border)',
-                    color: 'var(--color-linen)',
-                    padding: '10px',
-                    borderRadius: 'var(--radius-md)',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '0.85rem',
-                    outline: 'none'
-                  }}
-                />
-              </motion.div>
-            )}
-
-            {/* Stop Loss Checkbox */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '8px' }}>
-              <input
-                type="checkbox"
-                id="stoploss"
-                checked={useStopLoss}
-                onChange={(e) => setUseStopLoss(e.target.checked)}
-                style={{ cursor: 'pointer' }}
-              />
-              <label htmlFor="stoploss" style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', color: 'var(--color-sage)', cursor: 'pointer' }}>
-                Attach Trailing Stop Loss
-              </label>
-            </div>
-
-            {useStopLoss && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '24px' }}
-              >
-                <label style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', color: 'var(--color-linen)' }}>
-                  Stop Loss Threshold: <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{stopLossPercentage}%</span>
-                </label>
-                <input
-                  type="range"
-                  min="3"
-                  max="15"
-                  value={stopLossPercentage}
-                  onChange={(e) => setStopLossPercentage(parseInt(e.target.value))}
-                  className="slider-input"
-                />
-              </motion.div>
-            )}
-
-            {/* Review Button */}
-            <button
-              type="button"
-              onClick={handleReviewOrder}
-              className="btn-hero-primary"
-              style={{ width: '100%', marginTop: '16px' }}
-            >
-              Review Order Details
-            </button>
-          </motion.div>
+        {needsFee && (
+          <li>
+            Cinder&apos;s fee of {formatFeeRate(builder.fee)} on each sale, paid from the sale in USDC. Buys carry no
+            Cinder fee. You can withdraw this approval on SoDEX at any time.
+          </li>
         )}
-
-        {step === 'review' && (
-          <motion.div
-            key="review-form"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
-          >
-            <div style={{ backgroundColor: 'rgba(60, 61, 55, 0.25)', border: '1px solid var(--glass-border)', padding: '16px', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.8rem' }}>
-              <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-linen)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '8px', marginBottom: '4px' }}>Confirm Order Details</h4>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--color-sage)' }}>Transaction Side:</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', color: side === 'buy' ? 'var(--color-pulse-green)' : 'var(--color-shift-red)' }}>{side}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--color-sage)' }}>Asset Pair:</span>
-                <span style={{ fontWeight: 700, color: 'var(--color-linen)' }}>{pair}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--color-sage)' }}>Order Type:</span>
-                <span style={{ fontWeight: 700, color: 'var(--color-linen)', textTransform: 'uppercase' }}>{orderType}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--color-sage)' }}>Quantity:</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-linen)' }}>{quantity}</span>
-              </div>
-              {orderType === 'limit' && (
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--color-sage)' }}>Limit Price:</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-linen)' }}>${parseFloat(price).toFixed(2)}</span>
-                </div>
-              )}
-              {useStopLoss && (
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--color-sage)' }}>Trailing Stop Loss:</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--color-shift-red)' }}>{stopLossPercentage}%</span>
-                </div>
-              )}
-            </div>
-
-            {/* Execute Buttons */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-              {activeWalletAddress ? (
-                <button
-                  type="button"
-                  onClick={() => handleExecuteTrade()}
-                  className="btn-hero-primary"
-                  style={{ width: '100%', backgroundColor: 'var(--color-pulse-green)', borderColor: 'var(--color-pulse-green)', color: 'var(--color-obsidian)' }}
-                >
-                  Authorize & Trade via Wallet
-                </button>
-              ) : (
-                <div style={{ textAlign: 'center', padding: '12px', backgroundColor: 'rgba(245, 158, 11, 0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(245, 158, 11, 0.25)', fontSize: '0.72rem', color: 'var(--color-alert-amber)', marginBottom: '4px' }}>
-                  Connect your Web3 Wallet to authorize trades
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setStep('input')}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  fontFamily: 'var(--font-body)',
-                  fontSize: '0.75rem',
-                  color: 'var(--color-sage)',
-                  cursor: 'pointer',
-                  textAlign: 'center',
-                  marginTop: '8px'
-                }}
-              >
-                Go Back
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {step === 'signing' && (
-          <motion.div
-            key="signing-loader"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 0', textAlign: 'center', fontSize: '0.75rem' }}
-          >
-            <div 
-              style={{
-                width: '32px',
-                height: '32px',
-                border: '3px solid var(--color-data-blue)',
-                borderTopColor: 'transparent',
-                borderRadius: '50%',
-                animation: 'pulse-live 1.2s linear infinite',
-                marginBottom: '16px'
-              }} 
-            />
-            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-linen)', marginBottom: '4px' }}>Waiting for Signature Confirmation</h4>
-            <p style={{ fontFamily: 'var(--font-body)', color: 'var(--color-sage)', maxWidth: '240px', lineHeight: 1.4 }}>
-              Confirm the EIP-712 typed transaction request inside your browser extension or verify API key auth...
-            </p>
-          </motion.div>
-        )}
-
-        {step === 'success' && (
-          <motion.div
-            key="success-form"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0', textAlign: 'center', fontSize: '0.75rem' }}
-          >
-            <div style={{ width: '40px', height: '40px', backgroundColor: 'rgba(74, 222, 128, 0.08)', color: 'var(--color-pulse-green)', border: '2px solid var(--color-pulse-green)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', fontSize: '1.25rem', fontWeight: 'bold', margin: '0 auto 8px auto' }}>
-              ✓
-            </div>
-            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', color: 'var(--color-pulse-green)' }}>
-              {executionResult?.simulated ? 'Order Simulated' : 'Order Executed Successfully!'}
-            </h4>
-            {executionResult?.simulated && (
-              <span style={{ alignSelf: 'center', fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--color-wire-gold)', border: '1px solid rgba(212, 168, 83, 0.35)', backgroundColor: 'rgba(212, 168, 83, 0.08)', padding: '3px 10px', borderRadius: 'var(--radius-full)' }}>
-                SIMULATED: not executed on SoDEX
-              </span>
-            )}
-            
-            <div style={{ backgroundColor: 'rgba(60, 61, 55, 0.25)', border: '1px solid var(--glass-border)', padding: '16px', borderRadius: 'var(--radius-lg)', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px', fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--color-linen)' }}>
-              <div><b>Trade ID:</b> {executionResult?.tradeId}</div>
-              <div><b>SoDEX Order ID:</b> {executionResult?.sodexOrderId}</div>
-              <div><b>Execution Status:</b> {executionResult?.status}</div>
-              <div><b>Execution Fill Price:</b> ${parseFloat(executionResult?.fillPrice || 0).toLocaleString()}</div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setQuantity('');
-                setPrice('');
-                setStep('input');
-              }}
-              className="btn-hero-secondary"
-              style={{ width: '100%', marginTop: '8px' }}
-            >
-              Place Another Order
-            </button>
-          </motion.div>
-        )}
-
-        {step === 'error' && (
-          <motion.div
-            key="error-form"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 0', textAlign: 'center', fontSize: '0.75rem' }}
-          >
-            <div style={{ width: '40px', height: '40px', backgroundColor: 'rgba(239, 68, 68, 0.08)', color: 'var(--color-shift-red)', border: '2px solid var(--color-shift-red)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', fontSize: '1.25rem', fontWeight: 'bold', margin: '0 auto 8px auto' }}>
-              !
-            </div>
-            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem', color: 'var(--color-shift-red)' }}>Order Execution Failed</h4>
-            <p style={{ fontFamily: 'var(--font-body)', color: 'var(--color-sage)', leadingRelaxed: 1.4, maxWidth: '240px', margin: '0 auto' }}>
-              {errorMessage || 'Signature rejected or trade failed risk gates checks.'}
-            </p>
-
-            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-              <button
-                type="button"
-                onClick={() => setStep('review')}
-                className="btn-hero-secondary"
-                style={{ flex: 1 }}
-              >
-                Try Again
-              </button>
-              <button
-                type="button"
-                onClick={() => setStep('input')}
-                className="btn-hero-primary"
-                style={{ flex: 1 }}
-              >
-                Edit Parameters
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </ul>
+      {error && <p className="qt-error" role="alert">{error}</p>}
+      <button type="button" className="qt-primary" onClick={handleEnable} disabled={busy}>
+        {busy ? 'Waiting for your wallet' : 'Enable trading'}
+      </button>
     </div>
+  );
+}
+
+export default function QuickTrade({ onTradeSuccess }) {
+  const { network, builder, account, tradingKey, tradingReady, refreshAccount } = useWallet();
+
+  const [symbols, setSymbols] = useState([]);
+  const [marketsError, setMarketsError] = useState('');
+  const [marketName, setMarketName] = useState(DEFAULT_MARKET);
+  const [side, setSide] = useState('buy');
+  const [orderType, setOrderType] = useState('market');
+  const [amount, setAmount] = useState('');
+  const [price, setPrice] = useState('');
+  const [lastPrice, setLastPrice] = useState(null);
+  const [priceLoading, setPriceLoading] = useState(true);
+
+  const [step, setStep] = useState('input'); // 'input', 'review', 'placing', 'done', 'error'
+  const [prepared, setPrepared] = useState(null);
+  const [formError, setFormError] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [placedId, setPlacedId] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    getSpotSymbols(network)
+      .then((result) => {
+        if (!active) return;
+        if (result.ok) {
+          setSymbols(tradableMarkets(result.json.data));
+        } else {
+          setMarketsError(result.error);
+        }
+      })
+      .catch(err => active && setMarketsError(err.message));
+    return () => {
+      active = false;
+    };
+  }, [network]);
+
+  const symbol = symbols.find(s => s.name === marketName) || symbols[0];
+  const symbolName = symbol?.name;
+
+  // Last traded price of the selected market, refreshed every 10 seconds
+  useEffect(() => {
+    if (!symbolName) return undefined;
+    let active = true;
+    setLastPrice(null);
+    setPriceLoading(true);
+    const load = async () => {
+      try {
+        const ticker = await getSpotTicker(symbolName, network);
+        const last = parseFloat(ticker.json?.data?.[0]?.lastPx);
+        if (active) setLastPrice(ticker.ok && last > 0 ? last : null);
+      } catch {
+        if (active) setLastPrice(null);
+      } finally {
+        if (active) setPriceLoading(false);
+      }
+    };
+    load();
+    const interval = setInterval(load, 10000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [symbolName, network]);
+
+  const { base, quote } = symbol ? marketLabels(symbol) : { base: '', quote: 'USDC' };
+  const spendsQuote = side === 'buy' && orderType === 'market';
+  const available = side === 'buy' ? account.usdc : availableOf(account.balances, symbol?.baseCoin);
+  const chargesFee = Boolean(builder) && side === 'sell';
+
+  const draft = symbol
+    ? prepareSpotOrder({ symbol, side, type: orderType, amount, price, lastPrice })
+    : null;
+
+  const handleReview = () => {
+    if (!draft?.ok) {
+      setFormError(draft?.error || 'Pick a market.');
+      return;
+    }
+    if (side === 'buy' && draft.notional !== null && draft.notional > account.usdc) {
+      setFormError(`You have ${formatAmount(account.usdc)} USDC available.`);
+      return;
+    }
+    if (side === 'sell' && parseFloat(draft.order.quantity) > available) {
+      setFormError(`You have ${formatQuantity(available)} ${base} available.`);
+      return;
+    }
+    setFormError('');
+    setPrepared({ ...draft, symbol, base, quote });
+    setStep('review');
+  };
+
+  const handlePlace = async () => {
+    setStep('placing');
+    setErrorMessage('');
+    try {
+      const result = await placeSpotOrder({
+        key: tradingKey,
+        order: { symbolID: prepared.symbol.id, clOrdID: newClientOrderId('q'), ...prepared.order },
+        builder: builder ? { id: builder.id, fee: builder.fee } : null,
+        network
+      });
+      const error = batchError(result);
+      if (error) throw new Error(error);
+      setPlacedId(result.json.data[0]?.orderID ?? null);
+      setStep('done');
+      // Give SoDEX a moment to settle the fill before reading balances again
+      setTimeout(() => {
+        refreshAccount();
+        if (onTradeSuccess) onTradeSuccess();
+      }, 1500);
+    } catch (err) {
+      setErrorMessage(err.message || 'SoDEX refused the order.');
+      setStep('error');
+    }
+  };
+
+  const resetForm = () => {
+    setAmount('');
+    setPrice('');
+    setFormError('');
+    setPrepared(null);
+    setStep('input');
+  };
+
+  const intro = (
+    <p className="qt-intro">
+      Orders go from this browser straight to your {network.label} account
+      {network.isMainnet ? ' and use real USDC.' : ' and use test USDC.'}
+    </p>
+  );
+
+  if (account.status !== 'ready') {
+    return (
+      <section className="qt" aria-labelledby="qt-title">
+        <h2 id="qt-title" className="qt-title">Trade</h2>
+        {intro}
+        {account.status === 'missing' ? (
+          <p className="qt-note">
+            This wallet has no {network.label} account yet.{' '}
+            <a className="pf-link" href={network.appUrl} target="_blank" rel="noreferrer">Open SoDEX</a> with this
+            wallet, create the account and move USDC to Spot, then come back.
+          </p>
+        ) : account.status === 'error' ? (
+          <>
+            <p className="qt-error" role="alert">SoDEX could not be reached: {account.error}</p>
+            <button type="button" className="qt-secondary" onClick={refreshAccount}>Try again</button>
+          </>
+        ) : (
+          <p className="qt-note" role="status">Loading your SoDEX account</p>
+        )}
+      </section>
+    );
+  }
+
+  if (!tradingReady) {
+    return (
+      <section className="qt" aria-labelledby="qt-title">
+        <h2 id="qt-title" className="qt-title">Trade</h2>
+        {intro}
+        <EnableTrading />
+      </section>
+    );
+  }
+
+  return (
+    <section className="qt" aria-labelledby="qt-title">
+      <h2 id="qt-title" className="qt-title">Trade</h2>
+      {intro}
+
+      {step === 'input' && (
+        <div className="qt-form">
+          <div className="qt-side" role="group" aria-label="Order side">
+            <button type="button" aria-pressed={side === 'buy'} onClick={() => setSide('buy')}>Buy</button>
+            <button type="button" aria-pressed={side === 'sell'} onClick={() => setSide('sell')}>Sell</button>
+          </div>
+
+          <label className="qt-field">
+            <span>Market</span>
+            <select value={symbol?.name || ''} onChange={(e) => setMarketName(e.target.value)} disabled={!symbols.length}>
+              {symbols.length === 0 && <option value="">{marketsError ? 'Markets unavailable' : 'Loading markets'}</option>}
+              {symbols.map(s => (
+                <option key={s.id} value={s.name}>{s.displayName}</option>
+              ))}
+            </select>
+          </label>
+          {marketsError && <p className="qt-error" role="alert">SoDEX markets could not be loaded: {marketsError}</p>}
+          <p className="qt-price" aria-live="polite">
+            {lastPrice
+              ? `1 ${base} = ${formatAmount(lastPrice)} ${quote}`
+              : priceLoading ? 'Loading the last price' : 'No recent trades on this market'}
+          </p>
+
+          <div className="qt-row">
+            <label className="qt-field">
+              <span>Order type</span>
+              <select value={orderType} onChange={(e) => setOrderType(e.target.value)}>
+                <option value="market">Market</option>
+                <option value="limit">Limit</option>
+              </select>
+            </label>
+            <label className="qt-field">
+              <span>{spendsQuote ? `Amount in ${quote}` : `Quantity in ${base}`}</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="any"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </label>
+          </div>
+
+          {orderType === 'limit' && (
+            <label className="qt-field">
+              <span>Limit price in {quote}</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="any"
+                placeholder={lastPrice ? String(lastPrice) : '0.00'}
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+              />
+            </label>
+          )}
+
+          <p className="qt-note">
+            Available: {side === 'buy' ? `${formatAmount(available)} ${quote}` : `${formatQuantity(available)} ${base}`}
+          </p>
+
+          {draft?.ok && draft.notional !== null && (
+            <p className="qt-estimate">
+              {spendsQuote
+                ? <>About <strong>{lastPrice ? formatQuantity(draft.notional / lastPrice) : '?'} {base}</strong> at the last price</>
+                : <>About <strong>{formatAmount(draft.notional)} {quote}</strong> {side === 'buy' ? 'to pay' : 'to receive'}</>}
+            </p>
+          )}
+
+          {formError && <p className="qt-error" role="alert">{formError}</p>}
+
+          <button type="button" className="qt-primary" onClick={handleReview} disabled={!symbol}>Review order</button>
+        </div>
+      )}
+
+      {step === 'review' && prepared && (
+        <div className="qt-form">
+          <h3 className="qt-subtitle">Check your order</h3>
+          <dl className="qt-summary">
+            <div>
+              <dt>Order</dt>
+              <dd>
+                {side === 'buy' ? 'Buy' : 'Sell'}{' '}
+                {prepared.order.funds ? `${prepared.base} with ${formatAmount(prepared.order.funds)} ${prepared.quote}` : `${prepared.order.quantity} ${prepared.base}`}
+              </dd>
+            </div>
+            <div>
+              <dt>Type</dt>
+              <dd>{prepared.order.price ? `Limit at ${formatAmount(prepared.order.price)} ${prepared.quote}` : 'Market'}</dd>
+            </div>
+            {prepared.notional !== null && !prepared.order.funds && (
+              <div><dt>{side === 'buy' ? 'You pay' : 'You receive'}</dt><dd>about {formatAmount(prepared.notional)} {prepared.quote}</dd></div>
+            )}
+            <div>
+              <dt>Cinder fee</dt>
+              <dd>{chargesFee ? `${formatFeeRate(builder.fee)} of the sale` : 'None'}</dd>
+            </div>
+          </dl>
+          <p className="qt-note">
+            {prepared.order.price
+              ? 'A limit order waits on the book until the price is reached. Cancel it from your portfolio.'
+              : 'A market order fills straight away at the best prices on the book.'}{' '}
+            SoDEX also charges its own trading fee.
+          </p>
+          <button type="button" className="qt-primary" onClick={handlePlace}>
+            {side === 'buy' ? 'Place buy order' : 'Place sell order'}
+          </button>
+          <button type="button" className="qt-secondary" onClick={() => setStep('input')}>Edit order</button>
+        </div>
+      )}
+
+      {step === 'placing' && (
+        <div className="qt-status" role="status" aria-live="polite">
+          <span className="qt-spinner" aria-hidden="true" />
+          <p className="qt-status-title">Sending the order to SoDEX</p>
+        </div>
+      )}
+
+      {step === 'done' && (
+        <div className="qt-status" role="status">
+          <p className="qt-status-title">SoDEX accepted the order</p>
+          <p className="qt-note">
+            {prepared?.order.price
+              ? 'It is on the book now. Your open orders and balances update below.'
+              : 'Your balances and trades update below in a moment.'}
+          </p>
+          {placedId !== null && (
+            <dl className="qt-summary">
+              <div><dt>Order ID</dt><dd className="qt-id">{String(placedId)}</dd></div>
+            </dl>
+          )}
+          <button type="button" className="qt-secondary" onClick={resetForm}>Place another order</button>
+        </div>
+      )}
+
+      {step === 'error' && (
+        <div className="qt-status" role="alert">
+          <p className="qt-status-title is-error">SoDEX refused the order</p>
+          <p className="qt-note">{errorMessage}</p>
+          <button type="button" className="qt-primary" onClick={() => setStep('review')}>Try again</button>
+          <button type="button" className="qt-secondary" onClick={() => setStep('input')}>Edit order</button>
+        </div>
+      )}
+    </section>
   );
 }

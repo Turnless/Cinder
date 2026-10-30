@@ -1,0 +1,330 @@
+/* ============================================================
+   Dashboard: narratives
+   Uses only the design-system colors and fonts from globals.css.
+   ============================================================ */
+
+.narr-page {
+  background-color: var(--color-obsidian);
+  color: var(--color-linen);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.narr-wrap {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px 96px;
+}
+
+.narr-page :focus-visible {
+  outline: 2px solid var(--color-wire-gold);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.narr-head {
+  padding: 64px 0 24px;
+  display: grid;
+  gap: 12px;
+  max-width: 44rem;
+}
+
+.narr-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2.25rem, 4.6vw, 3.5rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.narr-intro {
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.narr-status {
+  margin-top: 8px;
+  font-size: 1rem;
+  color: var(--color-linen);
+}
+
+/* ---------- Sections ---------- */
+
+.narr-section {
+  padding: 56px 0 0;
+}
+
+.narr-section + .narr-section {
+  margin-top: 40px;
+  border-top: 1px solid var(--rule);
+}
+
+.narr-section-head {
+  display: grid;
+  gap: 10px;
+  max-width: 44rem;
+  margin-bottom: 28px;
+}
+
+.narr-section-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.4rem, 2.6vw, 1.85rem);
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+
+.narr-section-intro {
+  font-size: 0.98rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.narr-message {
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 44rem;
+}
+
+.narr-link {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.95rem;
+  color: var(--color-linen);
+  text-decoration: underline;
+  text-decoration-color: var(--text-faint);
+  text-underline-offset: 5px;
+}
+
+.narr-link:hover {
+  text-decoration-color: var(--color-linen);
+}
+
+/* ---------- Temperature table ---------- */
+
+.narr-table-wrap {
+  /* Narrow screens scroll the table sideways instead of squeezing it */
+  overflow-x: auto;
+  border: 1px solid var(--color-iron);
+  border-radius: var(--radius-lg);
+  background: rgba(60, 61, 55, 0.22);
+}
+
+.narr-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.narr-table th,
+.narr-table td {
+  padding: 14px 20px;
+  text-align: left;
+  border-top: 1px solid var(--rule);
+  vertical-align: middle;
+}
+
+.narr-table thead th {
+  border-top: none;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-faint);
+  white-space: nowrap;
+  padding-top: 16px;
+  padding-bottom: 12px;
+}
+
+.narr-table tbody th {
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.narr-table tr.is-leader th {
+  color: var(--color-linen);
+  font-weight: 600;
+}
+
+.narr-table .is-number {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.narr-temp {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  color: var(--color-linen);
+}
+
+.narr-change {
+  display: inline-block;
+  min-width: 2.4rem;
+  margin-left: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  text-align: right;
+}
+
+.narr-change.is-up {
+  color: var(--color-pulse-green);
+}
+
+.narr-change.is-down {
+  color: var(--color-shift-red);
+}
+
+.narr-score {
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.narr-trend {
+  display: block;
+  overflow: visible;
+}
+
+.narr-trend polyline {
+  stroke: var(--text-faint);
+}
+
+.narr-trend circle {
+  fill: var(--text-muted);
+}
+
+.narr-trend.is-leader polyline {
+  stroke: var(--color-wire-gold);
+}
+
+.narr-trend.is-leader circle {
+  fill: var(--color-wire-gold);
+}
+
+.narr-trend-empty {
+  font-size: 0.82rem;
+  color: var(--text-faint);
+}
+
+.narr-loading {
+  display: grid;
+  gap: 18px;
+  padding: 8px 0;
+}
+
+.narr-skeleton {
+  height: 18px;
+  border-radius: 3px;
+  background: rgba(236, 223, 204, 0.06);
+}
+
+/* ---------- Shifts ---------- */
+
+.narr-shifts {
+  display: grid;
+}
+
+.narr-shift {
+  display: grid;
+  grid-template-columns: 9.5rem minmax(0, 1fr);
+  gap: 24px;
+  padding: 22px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.narr-shift:last-child {
+  border-bottom: 1px solid var(--rule);
+}
+
+.narr-shift-time {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--text-faint);
+}
+
+.narr-shift-main {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.narr-shift-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-linen);
+}
+
+.narr-shift-meta {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+}
+
+.narr-shift-signals {
+  margin-top: 4px;
+  display: grid;
+  gap: 4px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+/* ---------- Limits ---------- */
+
+.narr-limits {
+  display: grid;
+  gap: 0 48px;
+  margin-bottom: 24px;
+}
+
+@media (min-width: 720px) {
+  .narr-limits {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1040px) {
+  .narr-limits {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.narr-limits div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.narr-limits dt {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+.narr-limits dd {
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  color: var(--color-linen);
+  text-align: right;
+}
+
+@media (max-width: 560px) {
+  .narr-head {
+    padding: 40px 0 16px;
+  }
+
+  .narr-shift {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .narr-table th,
+  .narr-table td {
+    padding: 12px 14px;
+  }
+}

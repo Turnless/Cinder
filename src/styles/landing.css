@@ -1,0 +1,318 @@
+/* ============================================================
+   Landing page
+   Uses only the design-system colors and fonts from globals.css.
+   ============================================================ */
+
+.landing {
+  background-color: var(--color-obsidian);
+  color: var(--color-linen);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.landing-wrap {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.landing :focus-visible {
+  outline: 2px solid var(--color-wire-gold);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ---------- Hero ---------- */
+
+.landing-hero {
+  padding: 88px 0 96px;
+  display: grid;
+  gap: 56px;
+}
+
+@media (min-width: 960px) {
+  .landing-hero {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: 72px;
+    align-items: end;
+    padding: 120px 0 112px;
+  }
+}
+
+.landing-headline {
+  font-family: var(--font-display);
+  font-weight: 800;
+  /* Syne at 800 is very wide, so the measure is set in ch generously and the size kept in check */
+  font-size: clamp(2.5rem, 5vw, 4.25rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--color-linen);
+  max-width: 16ch;
+}
+
+.landing-lede {
+  margin-top: 28px;
+  font-size: 1.125rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 34rem;
+}
+
+.landing-actions {
+  margin-top: 36px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px;
+}
+
+.landing-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 13px 22px;
+  border-radius: var(--radius-md);
+  background: var(--color-wire-gold);
+  color: var(--color-obsidian);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: background-color var(--duration-fast) ease;
+}
+
+.landing-button:hover {
+  background: #DDB664;
+}
+
+.landing-button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.landing-textlink {
+  font-size: 0.95rem;
+  color: var(--color-linen);
+  text-decoration: underline;
+  text-decoration-color: var(--text-faint);
+  text-underline-offset: 5px;
+  transition: text-decoration-color var(--duration-fast) ease;
+}
+
+.landing-textlink:hover {
+  text-decoration-color: var(--color-linen);
+}
+
+.landing-latest {
+  margin-top: 48px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+  max-width: 34rem;
+  display: grid;
+  gap: 6px;
+}
+
+.landing-latest-meta {
+  font-size: 0.85rem;
+  color: var(--text-faint);
+}
+
+.landing-latest-title {
+  text-align: left;
+  font-size: 1rem;
+  line-height: 1.45;
+  color: var(--color-linen);
+}
+
+.landing-latest-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: var(--text-faint);
+}
+
+.landing-hero > * {
+  /* Grid items default to min-width: auto; long one-line narrative names would push the panel wider */
+  min-width: 0;
+}
+
+/* ---------- Sections below the hero ---------- */
+
+.landing-section {
+  padding: 88px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.landing-section-head {
+  display: grid;
+  gap: 12px;
+  max-width: 40rem;
+}
+
+.landing-section-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.75rem, 3.4vw, 2.5rem);
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+  color: var(--color-linen);
+}
+
+.landing-section-intro {
+  font-size: 1.02rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* How a story becomes a trade: a real four-step pipeline, so the steps are numbered */
+.landing-steps {
+  margin-top: 56px;
+  display: grid;
+  gap: 40px;
+}
+
+@media (min-width: 720px) {
+  .landing-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 48px;
+  }
+}
+
+@media (min-width: 1100px) {
+  .landing-steps {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    column-gap: 40px;
+  }
+}
+
+.landing-step-number {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 2.75rem;
+  line-height: 1;
+  color: var(--color-wire-gold);
+}
+
+.landing-step-title {
+  margin-top: 18px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-linen);
+}
+
+.landing-step-text {
+  margin-top: 8px;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 30ch;
+}
+
+.landing-limits {
+  margin-top: 64px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--rule);
+  font-size: 0.92rem;
+  color: var(--text-muted);
+}
+
+.landing-limits strong {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  color: var(--color-linen);
+  margin-right: 6px;
+}
+
+/* The wire: latest headlines, bodies need a connected wallet */
+.landing-wire {
+  margin-top: 40px;
+  display: grid;
+}
+
+.landing-wire-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 20px;
+  align-items: baseline;
+  width: 100%;
+  padding: 18px 0;
+  border-top: 1px solid var(--rule);
+  text-align: left;
+  color: inherit;
+}
+
+.landing-wire-row:last-child {
+  border-bottom: 1px solid var(--rule);
+}
+
+.landing-wire-row:hover .landing-wire-title {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: var(--text-faint);
+}
+
+.landing-wire-time {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+.landing-wire-title {
+  font-size: 1.02rem;
+  line-height: 1.45;
+  color: var(--color-linen);
+}
+
+.landing-wire-kind {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.82rem;
+  color: var(--text-faint);
+}
+
+.landing-wire-kind.is-breaking {
+  color: var(--color-shift-red);
+}
+
+.landing-gate {
+  margin-top: 36px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 28px;
+}
+
+.landing-gate p {
+  font-size: 0.98rem;
+  color: var(--text-muted);
+  max-width: 34rem;
+}
+
+@media (max-width: 560px) {
+  .landing-hero {
+    padding: 56px 0 72px;
+  }
+
+  .landing-headline {
+    font-size: 2.15rem;
+  }
+
+  .landing-wire-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .landing-section {
+    padding: 64px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-button,
+  .landing-textlink {
+    transition: none;
+  }
+}

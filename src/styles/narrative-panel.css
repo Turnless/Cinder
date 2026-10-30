@@ -1,0 +1,140 @@
+/* ============================================================
+   Narrative temperature panel (landing page, feed)
+   ============================================================ */
+
+.temp-panel {
+  /* Long one-line narrative names must not widen the panel inside a grid */
+  min-width: 0;
+  border: 1px solid var(--color-iron);
+  border-radius: var(--radius-lg);
+  background: rgba(60, 61, 55, 0.22);
+  padding: 28px 24px 20px;
+}
+
+.temp-panel-title {
+  font-family: var(--font-body);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-linen);
+}
+
+.temp-panel-caption {
+  margin-top: 6px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.temp-rows {
+  margin-top: 22px;
+  display: grid;
+}
+
+.temp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 3.25rem 2.75rem;
+  grid-template-areas:
+    "name value delta"
+    "bar  bar   bar";
+  column-gap: 12px;
+  row-gap: 8px;
+  align-items: baseline;
+  padding: 11px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.temp-row:first-child {
+  border-top: none;
+}
+
+.temp-row-name {
+  grid-area: name;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.temp-row.is-leader .temp-row-name {
+  color: var(--color-linen);
+  font-weight: 600;
+}
+
+.temp-row-value {
+  grid-area: value;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--color-linen);
+}
+
+.temp-row-delta {
+  grid-area: delta;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+
+.temp-row-delta.is-up {
+  color: var(--color-pulse-green);
+}
+
+.temp-row-delta.is-down {
+  color: var(--color-shift-red);
+}
+
+.temp-row-track {
+  grid-area: bar;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(236, 223, 204, 0.07);
+  overflow: hidden;
+}
+
+.temp-row-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--color-wire-gold);
+  opacity: 0.55;
+  transform-origin: left center;
+  animation: temp-fill 900ms var(--ease-out-expo) both;
+}
+
+.temp-row.is-leader .temp-row-fill {
+  opacity: 1;
+}
+
+@keyframes temp-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.temp-panel-footer {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+.temp-panel-empty {
+  margin-top: 22px;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.temp-skeleton {
+  height: 14px;
+  border-radius: 3px;
+  background: rgba(236, 223, 204, 0.06);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .temp-row-fill {
+    animation: none;
+  }
+}

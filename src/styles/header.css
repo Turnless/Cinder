@@ -1,0 +1,291 @@
+/* ============================================================
+   Site header: logo, page links, wallet panel and the phone menu
+   ============================================================ */
+
+.hd {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background-color: var(--color-obsidian);
+  border-bottom: 1px solid var(--rule);
+}
+
+.hd-bar {
+  max-width: 1280px;
+  height: 64px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hd :focus-visible {
+  outline: 2px solid var(--color-wire-gold);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.hd-logo {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.3rem;
+  letter-spacing: -0.02em;
+  color: var(--color-linen);
+}
+
+.hd-logo-b {
+  color: var(--color-wire-gold);
+}
+
+.hd-right {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  min-width: 0;
+}
+
+/* ---------- Page links ---------- */
+
+.hd-links {
+  display: flex;
+  gap: 24px;
+}
+
+.hd-link {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  padding: 6px 0;
+  text-underline-offset: 8px;
+  text-decoration-thickness: 1px;
+}
+
+.hd-link:hover {
+  color: var(--color-linen);
+}
+
+.hd-link[aria-current='page'] {
+  color: var(--color-linen);
+  text-decoration: underline;
+  text-decoration-color: var(--color-wire-gold);
+}
+
+/* ---------- Wallet ---------- */
+
+.hd-wallet,
+.hd-menu {
+  position: relative;
+}
+
+.hd-wallet-button,
+.hd-menu-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--color-iron);
+  border-radius: 8px;
+  background: none;
+  color: var(--color-linen);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hd-wallet-button:hover,
+.hd-menu-button:hover,
+.hd-wallet-button[aria-expanded='true'],
+.hd-menu-button[aria-expanded='true'] {
+  border-color: var(--color-sage);
+}
+
+.hd-wallet-balance {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-wire-gold);
+}
+
+.hd-wallet-address {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding-left: 10px;
+  border-left: 1px solid var(--color-iron);
+}
+
+.hd-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  background-color: var(--color-obsidian);
+  border: 1px solid var(--color-iron);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.hd-wallet-panel {
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  padding: 18px;
+}
+
+.hd-panel-label {
+  font-size: 0.82rem;
+  color: var(--text-faint);
+}
+
+.hd-wallet-full {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--color-linen);
+  overflow-wrap: anywhere;
+}
+
+.hd-wallet-figures {
+  margin-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+
+.hd-wallet-figures > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.85rem;
+}
+
+.hd-wallet-figures dt {
+  color: var(--text-muted);
+}
+
+.hd-wallet-figures dd {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--color-linen);
+}
+
+.hd-panel-note {
+  margin-top: 10px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.hd-panel-actions {
+  margin-top: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.hd-button {
+  height: 38px;
+  border: 1px solid var(--color-iron);
+  border-radius: 8px;
+  background: none;
+  color: var(--color-linen);
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.hd-button:hover {
+  border-color: var(--color-sage);
+}
+
+a.hd-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.hd-button-primary {
+  border-color: var(--color-wire-gold);
+  color: var(--color-wire-gold);
+}
+
+.hd-button-primary:hover {
+  border-color: var(--color-wire-gold);
+  background-color: rgba(212, 168, 83, 0.08);
+}
+
+.hd-button:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+/* ---------- Phone menu ---------- */
+
+.hd-menu {
+  display: none;
+}
+
+.hd-menu-panel {
+  width: 220px;
+  padding: 6px 0;
+}
+
+.hd-menu-link {
+  display: block;
+  padding: 12px 18px;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.hd-menu-link:hover {
+  color: var(--color-linen);
+}
+
+.hd-menu-link[aria-current='page'] {
+  color: var(--color-linen);
+  box-shadow: inset 2px 0 0 var(--color-wire-gold);
+}
+
+@media (max-width: 767px) {
+  .hd-links {
+    display: none;
+  }
+
+  .hd-menu {
+    display: block;
+  }
+
+  /* The Menu button sits right of the wallet, so pin the wallet panel to the row's right edge instead */
+  .hd-right {
+    position: relative;
+    gap: 8px;
+  }
+
+  .hd-wallet {
+    position: static;
+  }
+}
+
+@media (max-width: 639px) {
+  .hd-bar {
+    height: 56px;
+    padding: 0 16px;
+  }
+
+  .hd-logo {
+    font-size: 1.15rem;
+  }
+}
+
+/* The address is in the wallet panel, so narrow screens show only the balance */
+@media (max-width: 480px) {
+  .hd-wallet-address {
+    display: none;
+  }
+
+  .hd-wallet-button,
+  .hd-menu-button {
+    padding: 0 10px;
+  }
+}
